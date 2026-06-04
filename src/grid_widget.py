@@ -130,7 +130,7 @@ class ElectrodeGrid(QWidget):
                 self.cycle_cell_state(row, col)
 
     def paintEvent(self, event):
-        """绘制网格和所有单元格（带圆角、柔和边框、无文字）。"""
+        """绘制网格和所有单元格（带圆角、柔和边框、坐标文本）。"""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
@@ -159,6 +159,12 @@ class ElectrodeGrid(QWidget):
                 pen.setJoinStyle(Qt.RoundJoin)
                 painter.setPen(pen)
                 painter.drawPath(path)
+
+                text = f"({row},{col})"
+                text_color = QColor(255, 255, 255) if state == self.STATE_OBSTACLE else QColor(70, 70, 70)
+                painter.setPen(text_color)
+                painter.setFont(QFont("Arial", 7))
+                painter.drawText(rect, Qt.AlignCenter, text)
 
     def reset_grid(self):
         """重置所有单元格为 Idle 状态。"""

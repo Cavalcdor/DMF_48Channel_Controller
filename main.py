@@ -59,7 +59,7 @@ class DMFControllerWindow(QMainWindow):
         }
         QWidget {
             font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
-            font-size: 12px;
+            font-size: 13px;
         }
         QGroupBox {
             color: #333333;
@@ -71,14 +71,14 @@ class DMFControllerWindow(QMainWindow):
             padding-left: 10px;
             padding-right: 10px;
             padding-bottom: 10px;
-            font-size: 13px;
+            font-size: 14px;
             font-weight: bold;
         }
         QGroupBox::title {
             subcontrol-origin: margin;
             left: 10px;
             padding: 0 3px 0 3px;
-            font-size: 14px;
+            font-size: 15px;
             font-weight: bold;
             color: #1a1a1a;
         }
@@ -86,7 +86,7 @@ class DMFControllerWindow(QMainWindow):
             border: none;
             border-radius: 5px;
             padding: 8px 12px;
-            font-size: 12px;
+            font-size: 13px;
             font-weight: bold;
             color: #333333;
             background-color: #5a7f94;
@@ -107,7 +107,7 @@ class DMFControllerWindow(QMainWindow):
             padding: 5px 8px;
             background-color: #ffffff;
             color: #333333;
-            font-size: 12px;
+            font-size: 13px;
         }
         QComboBox:focus {
             border: 2px solid #5a7f94;
@@ -273,6 +273,31 @@ class DMFControllerWindow(QMainWindow):
 
         info_group.setLayout(info_layout)
         left_panel.addWidget(info_group)
+
+        # 颜色图例组
+        legend_group = QGroupBox("颜色图例")
+        legend_layout = QVBoxLayout()
+        legend_layout.setContentsMargins(8, 8, 8, 8)
+        legend_layout.setSpacing(6)
+
+        legend_items = [
+            ("Blue", "起点(Start)", "#3b78ff"),
+            ("Orange", "目标(Target)", "#ffb320"),
+            ("Black", "障碍物(Obstacle)", "#262626"),
+            ("LightGray", "空闲(Idle)", "#ebebeb"),
+        ]
+
+        for name, text, color in legend_items:
+            row_layout = QHBoxLayout()
+            swatch = QWidget()
+            swatch.setFixedSize(18, 18)
+            swatch.setStyleSheet(f"background-color: {color}; border: 1px solid #c0c0c0; border-radius: 3px;")
+            row_layout.addWidget(swatch)
+            row_layout.addWidget(QLabel(f"{name} = {text}"))
+            legend_layout.addLayout(row_layout)
+
+        legend_group.setLayout(legend_layout)
+        left_panel.addWidget(legend_group)
 
         left_panel.addStretch()
 

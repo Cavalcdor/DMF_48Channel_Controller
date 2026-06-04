@@ -24,7 +24,7 @@ class DMFControllerWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("DMF 48-Channel Controller")
+        self.setWindowTitle("DMF 48通道控制器")
         self.setGeometry(100, 100, 1200, 800)
 
         # ============ 初始化模块 ============
@@ -59,25 +59,25 @@ class DMFControllerWindow(QMainWindow):
         left_panel = QVBoxLayout()
 
         # 串口控制组
-        serial_group = QGroupBox("Serial Connection")
+        serial_group = QGroupBox("串口连接")
         serial_layout = QVBoxLayout()
 
         serial_combo_layout = QHBoxLayout()
-        serial_combo_layout.addWidget(QLabel("Port:"))
+        serial_combo_layout.addWidget(QLabel("端口："))
         self.port_combo = QComboBox()
         self.port_combo.setMinimumWidth(120)
         serial_combo_layout.addWidget(self.port_combo)
-        self.refresh_ports_btn = QPushButton("Refresh")
+        self.refresh_ports_btn = QPushButton("刷新")
         self.refresh_ports_btn.clicked.connect(self.refresh_serial_ports)
         serial_combo_layout.addWidget(self.refresh_ports_btn)
         serial_layout.addLayout(serial_combo_layout)
 
-        self.connect_btn = QPushButton("Connect")
+        self.connect_btn = QPushButton("连接")
         self.connect_btn.setCheckable(True)
         self.connect_btn.clicked.connect(self.toggle_serial_connection)
         serial_layout.addWidget(self.connect_btn)
 
-        self.serial_status_label = QLabel("Status: Disconnected")
+        self.serial_status_label = QLabel("状态：未连接")
         self.serial_status_label.setStyleSheet("color: red;")
         serial_layout.addWidget(self.serial_status_label)
 
@@ -85,12 +85,12 @@ class DMFControllerWindow(QMainWindow):
         left_panel.addWidget(serial_group)
 
         # 路径规划和运动控制组
-        control_group = QGroupBox("Path Control")
+        control_group = QGroupBox("路径控制")
         control_layout = QVBoxLayout()
 
         # 运动参数
         param_layout = QHBoxLayout()
-        param_layout.addWidget(QLabel("Step Delay (ms):"))
+        param_layout.addWidget(QLabel("步长延迟 (ms)："))
         self.delay_spinbox = QComboBox()
         self.delay_spinbox.addItems(["100", "200", "500", "1000"])
         self.delay_spinbox.setCurrentText("500")
@@ -100,12 +100,12 @@ class DMFControllerWindow(QMainWindow):
         control_layout.addLayout(param_layout)
 
         # 运动按钮
-        self.run_path_btn = QPushButton("Run Path")
+        self.run_path_btn = QPushButton("运行路径")
         self.run_path_btn.setStyleSheet("background-color: #4CAF50; color: white;")
         self.run_path_btn.clicked.connect(self.on_run_path)
         control_layout.addWidget(self.run_path_btn)
 
-        self.stop_btn = QPushButton("Stop")
+        self.stop_btn = QPushButton("停止")
         self.stop_btn.setStyleSheet("background-color: #f44336; color: white;")
         self.stop_btn.clicked.connect(self.on_stop)
         self.stop_btn.setEnabled(False)
@@ -115,23 +115,23 @@ class DMFControllerWindow(QMainWindow):
         left_panel.addWidget(control_group)
 
         # 网格操作组
-        grid_control_group = QGroupBox("Grid Operations")
+        grid_control_group = QGroupBox("网格操作")
         grid_control_layout = QVBoxLayout()
 
-        self.reset_grid_btn = QPushButton("Reset Grid")
+        self.reset_grid_btn = QPushButton("重置网格")
         self.reset_grid_btn.clicked.connect(self.on_reset_grid)
         grid_control_layout.addWidget(self.reset_grid_btn)
 
         clear_btns_layout = QHBoxLayout()
-        self.clear_starts_btn = QPushButton("Clear Starts")
+        self.clear_starts_btn = QPushButton("清除起点")
         self.clear_starts_btn.clicked.connect(lambda: self.on_clear_state(ElectrodeGrid.STATE_START))
         clear_btns_layout.addWidget(self.clear_starts_btn)
 
-        self.clear_targets_btn = QPushButton("Clear Targets")
+        self.clear_targets_btn = QPushButton("清除目标")
         self.clear_targets_btn.clicked.connect(lambda: self.on_clear_state(ElectrodeGrid.STATE_TARGET))
         clear_btns_layout.addWidget(self.clear_targets_btn)
 
-        self.clear_obstacles_btn = QPushButton("Clear Obstacles")
+        self.clear_obstacles_btn = QPushButton("清除障碍物")
         self.clear_obstacles_btn.clicked.connect(lambda: self.on_clear_state(ElectrodeGrid.STATE_OBSTACLE))
         clear_btns_layout.addWidget(self.clear_obstacles_btn)
 
@@ -141,14 +141,14 @@ class DMFControllerWindow(QMainWindow):
         left_panel.addWidget(grid_control_group)
 
         # 状态信息
-        info_group = QGroupBox("Information")
+        info_group = QGroupBox("信息")
         info_layout = QVBoxLayout()
 
-        self.info_label = QLabel("Ready")
+        self.info_label = QLabel("就绪")
         self.info_label.setWordWrap(True)
         info_layout.addWidget(self.info_label)
 
-        self.path_info_label = QLabel("Path: None")
+        self.path_info_label = QLabel("路径：无")
         self.path_info_label.setWordWrap(True)
         info_layout.addWidget(self.path_info_label)
 
@@ -164,7 +164,7 @@ class DMFControllerWindow(QMainWindow):
         central_widget.setLayout(main_layout)
 
         # ============ 状态栏 ============
-        self.statusBar().showMessage("Idle")
+        self.statusBar().showMessage("就绪")
 
         # ============ 初始化串口列表 ============
         self.refresh_serial_ports()
@@ -176,56 +176,56 @@ class DMFControllerWindow(QMainWindow):
         if ports:
             self.port_combo.addItems(ports)
         else:
-            self.port_combo.addItem("No ports found")
+            self.port_combo.addItem("未发现串口")
 
     def toggle_serial_connection(self):
         """切换串口连接状态。"""
         if self.connect_btn.isChecked():
             port = self.port_combo.currentText()
-            if port == "No ports found":
-                QMessageBox.warning(self, "Error", "No serial ports found")
+            if port == "未发现串口":
+                QMessageBox.warning(self, "错误", "未发现串口")
                 self.connect_btn.setChecked(False)
                 return
             self.serial_thread.open_port(port)
         else:
             self.serial_thread.close_port()
             self.serial_connected = False
-            self.serial_status_label.setText("Status: Disconnected")
+            self.serial_status_label.setText("状态：未连接")
             self.serial_status_label.setStyleSheet("color: red;")
-            self.statusBar().showMessage("Serial disconnected")
+            self.statusBar().showMessage("串口已断开连接")
 
     @pyqtSlot(bool)
     def on_port_opened(self, success):
         """串口打开结果回调。"""
         if success:
             self.serial_connected = True
-            self.serial_status_label.setText(f"Status: Connected ({self.port_combo.currentText()})")
+            self.serial_status_label.setText(f"状态：已连接 ({self.port_combo.currentText()})")
             self.serial_status_label.setStyleSheet("color: green;")
-            self.statusBar().showMessage(f"Serial connected: {self.port_combo.currentText()}")
+            self.statusBar().showMessage(f"串口已连接：{self.port_combo.currentText()}")
             self.port_combo.setEnabled(False)
             self.refresh_ports_btn.setEnabled(False)
         else:
             self.serial_connected = False
-            self.serial_status_label.setText("Status: Connection Failed")
+            self.serial_status_label.setText("状态：连接失败")
             self.serial_status_label.setStyleSheet("color: orange;")
-            self.statusBar().showMessage("Serial connection failed")
+            self.statusBar().showMessage("串口连接失败")
             self.connect_btn.setChecked(False)
 
     @pyqtSlot(str)
     def on_serial_data(self, data):
         """处理串口接收数据。"""
-        self.info_label.setText(f"Received: {data}")
+        self.info_label.setText(f"接收：{data}")
 
     @pyqtSlot(str)
     def on_serial_error(self, error_msg):
         """处理串口错误。"""
-        self.statusBar().showMessage(f"Error: {error_msg}")
-        QMessageBox.critical(self, "Serial Error", error_msg)
+        self.statusBar().showMessage(f"错误：{error_msg}")
+        QMessageBox.critical(self, "串口错误", error_msg)
 
     def on_run_path(self):
         """运行路径寻路和液滴移动。"""
         if not self.serial_connected:
-            QMessageBox.warning(self, "Warning", "Serial port not connected")
+            QMessageBox.warning(self, "警告", "串口未连接")
             return
 
         # 获取起点、目标、障碍物
@@ -234,11 +234,11 @@ class DMFControllerWindow(QMainWindow):
         obstacles = set(self.grid_widget.get_obstacle_points())
 
         if not start_points:
-            QMessageBox.warning(self, "Warning", "No start point set")
+            QMessageBox.warning(self, "警告", "未设置起点")
             return
 
         if not target_points:
-            QMessageBox.warning(self, "Warning", "No target point set")
+            QMessageBox.warning(self, "警告", "未设置目标")
             return
 
         # 简单起见，使用第一个起点和第一个目标
@@ -249,7 +249,7 @@ class DMFControllerWindow(QMainWindow):
         path = bfs_shortest_path(start, target, obstacles)
 
         if not path:
-            QMessageBox.warning(self, "No Path", f"No path found from {start} to {target}")
+            QMessageBox.warning(self, "无路径", f"从 {start} 到 {target} 无可达路径")
             return
 
         # 初始化液滴移动
@@ -263,8 +263,8 @@ class DMFControllerWindow(QMainWindow):
 
         # 显示路径信息
         indices = path_to_indices(path)
-        self.path_info_label.setText(f"Path: {len(path)} steps, Indices: {indices[:5]}...")
-        self.statusBar().showMessage(f"Running path: {len(path)} steps")
+        self.path_info_label.setText(f"路径：{len(path)} 步，索引：{indices[:5]}...")
+        self.statusBar().showMessage(f"正在执行路径：{len(path)} 步")
 
         # 启动液滴移动定时器
         delay_ms = int(self.delay_spinbox.currentText())
@@ -277,8 +277,8 @@ class DMFControllerWindow(QMainWindow):
         self.run_path_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
         self.grid_widget.setEnabled(True)
-        self.statusBar().showMessage("Path execution stopped")
-        self.info_label.setText("Stopped")
+        self.statusBar().showMessage("路径执行已停止")
+        self.info_label.setText("已停止")
 
     def move_droplet_step(self):
         """液滴单步移动。"""
@@ -293,8 +293,8 @@ class DMFControllerWindow(QMainWindow):
             self.run_path_btn.setEnabled(True)
             self.stop_btn.setEnabled(False)
             self.grid_widget.setEnabled(True)
-            self.statusBar().showMessage("Path execution complete")
-            self.info_label.setText("Path completed")
+            self.statusBar().showMessage("路径执行完成")
+            self.info_label.setText("路径已完成")
             return
 
         # 获取当前步骤的电极
@@ -311,21 +311,21 @@ class DMFControllerWindow(QMainWindow):
         self.serial_thread.send_cmd(f"ON,{current_index}")
 
         # 更新状态
-        self.info_label.setText(f"Step {self.current_droplet_index + 1}/{len(self.current_path)}: ({current_pos[0]}, {current_pos[1]})")
-        self.statusBar().showMessage(f"Moving to ({current_pos[0]}, {current_pos[1]}), Index: {current_index}")
+        self.info_label.setText(f"步骤 {self.current_droplet_index + 1}/{len(self.current_path)}：({current_pos[0]}, {current_pos[1]})")
+        self.statusBar().showMessage(f"移动到 ({current_pos[0]}, {current_pos[1]})，索引：{current_index}")
 
         self.current_droplet_index += 1
 
     def on_reset_grid(self):
         """重置网格所有单元格为 Idle。"""
         self.grid_widget.reset_grid()
-        self.statusBar().showMessage("Grid reset")
+        self.statusBar().showMessage("网格已重置")
 
     def on_clear_state(self, state):
         """清除指定状态的所有单元格。"""
         self.grid_widget.clear_state(state)
         state_name = ElectrodeGrid.STATE_NAMES[state]
-        self.statusBar().showMessage(f"Cleared all {state_name} cells")
+        self.statusBar().showMessage(f"已清除所有 {state_name} 单元格")
 
     def closeEvent(self, event):
         """窗口关闭事件。"""

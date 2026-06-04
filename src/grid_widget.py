@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import QWidget
-from PyQt5.QtCore import Qt, QRect, QSize, pyqtSignal
+from PyQt5.QtCore import Qt, QRect, QRectF, QSize, pyqtSignal
 from PyQt5.QtGui import QPainter, QColor, QPen, QFont, QPainterPath
 from . import global_cfg
 
@@ -138,12 +138,13 @@ class ElectrodeGrid(QWidget):
         for row in range(self.rows):
             for col in range(self.cols):
                 rect = self._get_cell_rect(row, col)
+                rect_f = QRectF(rect)  # 转换为 QRectF
                 state = self.grid[row][col]
                 color = self.STATE_COLORS[state]
 
                 # 创建圆角路径
                 path = QPainterPath()
-                path.addRoundedRect(rect, self.border_radius, self.border_radius)
+                path.addRoundedRect(rect_f, self.border_radius, self.border_radius)
 
                 # 绘制填充矩形（带圆角，流畜优雅）
                 painter.fillPath(path, color)

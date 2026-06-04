@@ -86,11 +86,9 @@ class DMFControllerWindow(QMainWindow):
             font-weight: bold;
             color: white;
             background-color: #5a7f94;
-            transition: all 0.2s;
         }
         QPushButton:hover {
             background-color: #6a8fa4;
-            transform: translate(0, -1px);
         }
         QPushButton:pressed {
             background-color: #4a6f84;

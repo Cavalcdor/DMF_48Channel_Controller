@@ -7,7 +7,8 @@ import sys
 import time
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QComboBox, QLabel, QStatusBar, QGroupBox, QMessageBox
+    QPushButton, QComboBox, QLabel, QStatusBar, QGroupBox, QMessageBox,
+    QSizePolicy
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSlot
 from PyQt5.QtGui import QFont, QColor
@@ -26,6 +27,7 @@ class DMFControllerWindow(QMainWindow):
 
         self.setWindowTitle("DMF 48通道控制器")
         self.setGeometry(100, 100, 1200, 800)
+        self.setMinimumSize(1100, 720)
 
         # ============ 初始化模块 ============
         self.serial_thread = SerialThread()
@@ -55,66 +57,82 @@ class DMFControllerWindow(QMainWindow):
         """应用全局 QSS 样式表。"""
         stylesheet = """
         QMainWindow {
-            background-color: #f5f5f5;
+            background-color: #f7f7f7;
         }
         QWidget {
             font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
-            font-size: 13px;
+            font-size: 12px;
         }
         QGroupBox {
-            color: #333333;
+            color: #303030;
             background-color: #ffffff;
-            border: 1px solid #d0d0d0;
-            border-radius: 6px;
-            margin-top: 10px;
-            padding-top: 10px;
+            border: 1px solid #d6d6d6;
+            border-radius: 8px;
+            margin-top: 8px;
+            padding-top: 12px;
             padding-left: 10px;
             padding-right: 10px;
             padding-bottom: 10px;
-            font-size: 14px;
-            font-weight: bold;
+            font-size: 13px;
+            font-weight: 600;
         }
         QGroupBox::title {
             subcontrol-origin: margin;
+            subcontrol-position: top left;
             left: 10px;
-            padding: 0 3px 0 3px;
+            padding: 0 4px;
             font-size: 15px;
-            font-weight: bold;
-            color: #1a1a1a;
+            font-weight: 700;
+            color: #202020;
         }
         QPushButton {
-            border: none;
-            border-radius: 5px;
-            padding: 8px 12px;
-            font-size: 13px;
-            font-weight: bold;
-            color: #333333;
-            background-color: #5a7f94;
+            border: 1px solid #cdd5db;
+            border-radius: 6px;
+            padding: 8px 10px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #222222;
+            background-color: #e8edf2;
         }
         QPushButton:hover {
-            background-color: #6a8fa4;
+            background-color: #edf2f6;
         }
         QPushButton:pressed {
-            background-color: #4a6f84;
+            background-color: #dbe3ea;
         }
         QPushButton:disabled {
-            background-color: #cccccc;
-            color: #999999;
+            background-color: #d9d9d9;
+            color: #8c8c8c;
+        }
+        QPushButton#soft_btn {
+            background-color: #e8edf2;
+            color: #222222;
+            border: 1px solid #cdd5db;
+        }
+        QPushButton#soft_btn:hover {
+            background-color: #edf2f6;
+        }
+        QPushButton#soft_btn:pressed {
+            background-color: #dbe3ea;
         }
         QComboBox {
-            border: 1px solid #b0b0b0;
-            border-radius: 4px;
-            padding: 5px 8px;
+            border: 1px solid #c4cbd2;
+            border-radius: 5px;
+            padding: 6px 8px;
             background-color: #ffffff;
-            color: #333333;
-            font-size: 13px;
+            color: #303030;
+            font-size: 12px;
         }
         QComboBox:focus {
-            border: 2px solid #5a7f94;
+            border: 1px solid #7aa0c8;
         }
         QLabel {
-            color: #333333;
+            color: #303030;
             font-size: 12px;
+        }
+        QLabel[helper="true"] {
+            color: #666666;
+            font-size: 11px;
         }
         """
         self.setStyleSheet(stylesheet)
@@ -123,16 +141,21 @@ class DMFControllerWindow(QMainWindow):
         """初始化用户界面。"""
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        central_widget.setStyleSheet("background-color: #f5f5f5;")
+        central_widget.setStyleSheet("background-color: #f7f7f7;")
 
         main_layout = QHBoxLayout(central_widget)
         main_layout.setContentsMargins(12, 12, 12, 12)
-        main_layout.setSpacing(15)
+        main_layout.setSpacing(14)
 
         # ============ 左侧控制面板 ============
-        left_panel = QVBoxLayout()
+        left_sidebar = QWidget()
+        left_sidebar.setFixedWidth(340)
+        left_sidebar.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        left_sidebar.setStyleSheet("background-color: #f7f7f7;")
+
+        left_panel = QVBoxLayout(left_sidebar)
         left_panel.setContentsMargins(0, 0, 0, 0)
-        left_panel.setSpacing(12)
+        left_panel.setSpacing(10)
 
         # 串口控制组
         serial_group = QGroupBox("串口连接")
@@ -142,22 +165,25 @@ class DMFControllerWindow(QMainWindow):
 
         serial_combo_layout = QHBoxLayout()
         serial_combo_layout.setSpacing(6)
-        serial_combo_layout.addWidget(QLabel("端口："))
+        serial_combo_layout.addWidget(QLabel("端口："), 0)
         self.port_combo = QComboBox()
-        self.port_combo.setMinimumWidth(120)
-        serial_combo_layout.addWidget(self.port_combo)
+        self.port_combo.setMinimumWidth(140)
+        serial_combo_layout.addWidget(self.port_combo, 1)
         self.refresh_ports_btn = QPushButton("刷新")
+        self.refresh_ports_btn.setObjectName("soft_btn")
         self.refresh_ports_btn.clicked.connect(self.refresh_serial_ports)
         serial_combo_layout.addWidget(self.refresh_ports_btn)
         serial_layout.addLayout(serial_combo_layout)
 
         self.connect_btn = QPushButton("连接")
+        self.connect_btn.setObjectName("soft_btn")
         self.connect_btn.setCheckable(True)
         self.connect_btn.clicked.connect(self.toggle_serial_connection)
         serial_layout.addWidget(self.connect_btn)
 
         self.serial_status_label = QLabel("状态：未连接")
-        self.serial_status_label.setStyleSheet("color: #d32f2f; font-weight: bold; font-size: 10px;")
+        self.serial_status_label.setProperty("helper", True)
+        self.serial_status_label.setStyleSheet("color: #d32f2f; font-weight: 600; font-size: 11px;")
         serial_layout.addWidget(self.serial_status_label)
 
         serial_group.setLayout(serial_layout)
@@ -235,22 +261,26 @@ class DMFControllerWindow(QMainWindow):
         grid_control_layout.setSpacing(8)
 
         self.reset_grid_btn = QPushButton("重置网格")
+        self.reset_grid_btn.setObjectName("soft_btn")
         self.reset_grid_btn.clicked.connect(self.on_reset_grid)
         grid_control_layout.addWidget(self.reset_grid_btn)
 
         clear_btns_layout = QHBoxLayout()
-        clear_btns_layout.setSpacing(6)
+        clear_btns_layout.setSpacing(8)
         self.clear_starts_btn = QPushButton("清除起点")
+        self.clear_starts_btn.setObjectName("soft_btn")
         self.clear_starts_btn.clicked.connect(lambda: self.on_clear_state(ElectrodeGrid.STATE_START))
-        clear_btns_layout.addWidget(self.clear_starts_btn)
+        clear_btns_layout.addWidget(self.clear_starts_btn, 1)
 
         self.clear_targets_btn = QPushButton("清除目标")
+        self.clear_targets_btn.setObjectName("soft_btn")
         self.clear_targets_btn.clicked.connect(lambda: self.on_clear_state(ElectrodeGrid.STATE_TARGET))
-        clear_btns_layout.addWidget(self.clear_targets_btn)
+        clear_btns_layout.addWidget(self.clear_targets_btn, 1)
 
         self.clear_obstacles_btn = QPushButton("清除障碍物")
+        self.clear_obstacles_btn.setObjectName("soft_btn")
         self.clear_obstacles_btn.clicked.connect(lambda: self.on_clear_state(ElectrodeGrid.STATE_OBSTACLE))
-        clear_btns_layout.addWidget(self.clear_obstacles_btn)
+        clear_btns_layout.addWidget(self.clear_obstacles_btn, 1)
 
         grid_control_layout.addLayout(clear_btns_layout)
 
@@ -268,6 +298,7 @@ class DMFControllerWindow(QMainWindow):
         info_layout.addWidget(self.info_label)
 
         self.path_info_label = QLabel("路径：无")
+        self.path_info_label.setProperty("helper", True)
         self.path_info_label.setWordWrap(True)
         info_layout.addWidget(self.path_info_label)
 
@@ -281,19 +312,24 @@ class DMFControllerWindow(QMainWindow):
         legend_layout.setSpacing(6)
 
         legend_items = [
-            ("Blue", "起点(Start)", "#3b78ff"),
-            ("Orange", "目标(Target)", "#ffb320"),
-            ("Black", "障碍物(Obstacle)", "#262626"),
-            ("LightGray", "空闲(Idle)", "#ebebeb"),
+            ("蓝色", "起点", "#3b78ff"),
+            ("橙色", "目标", "#ffb320"),
+            ("黑色", "障碍物", "#262626"),
+            ("浅灰色", "空闲", "#ebebeb"),
         ]
 
         for name, text, color in legend_items:
             row_layout = QHBoxLayout()
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(8)
+            row_layout.setAlignment(Qt.AlignVCenter)
             swatch = QWidget()
-            swatch.setFixedSize(18, 18)
-            swatch.setStyleSheet(f"background-color: {color}; border: 1px solid #c0c0c0; border-radius: 3px;")
+            swatch.setFixedSize(14, 14)
+            swatch.setStyleSheet(f"background-color: {color}; border: 1px solid #c7c7c7; border-radius: 2px;")
+            label = QLabel(f"{name} = {text}")
+            label.setStyleSheet("font-size: 12px; color: #303030;")
             row_layout.addWidget(swatch)
-            row_layout.addWidget(QLabel(f"{name} = {text}"))
+            row_layout.addWidget(label, 1)
             legend_layout.addLayout(row_layout)
 
         legend_group.setLayout(legend_layout)
@@ -302,7 +338,7 @@ class DMFControllerWindow(QMainWindow):
         left_panel.addStretch()
 
         # ============ 右侧电极网格 ============
-        main_layout.addLayout(left_panel, stretch=1)
+        main_layout.addWidget(left_sidebar, stretch=0)
         main_layout.addWidget(self.grid_widget, stretch=1)
 
         central_widget.setLayout(main_layout)

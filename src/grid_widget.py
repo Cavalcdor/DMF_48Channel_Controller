@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import QWidget
-from PyQt5.QtCore import Qt, QRect, pyqtSignal
-from PyQt5.QtGui import QPainter, QColor, QPen, QFont
+from PyQt5.QtCore import Qt, QRect, QSize, pyqtSignal
+from PyQt5.QtGui import QPainter, QColor, QPen, QFont, QPainterPath
 from . import global_cfg
 
 
@@ -30,10 +30,10 @@ class ElectrodeGrid(QWidget):
     }
 
     STATE_COLORS = {
-        STATE_IDLE: QColor(200, 200, 200),      # 浅灰
-        STATE_START: QColor(0, 0, 255),         # 蓝色
-        STATE_TARGET: QColor(255, 165, 0),      # 橙色
-        STATE_OBSTACLE: QColor(0, 0, 0),        # 黑色
+        STATE_IDLE: QColor(235, 235, 235),      # 柔和浅灭
+        STATE_START: QColor(59, 120, 255),      # 现代轩蓝
+        STATE_TARGET: QColor(255, 179, 32),     # 流畜橙
+        STATE_OBSTACLE: QColor(38, 38, 38),     # 深阅
     }
 
     cell_changed = pyqtSignal(int, int, int)  # row, col, state
@@ -47,18 +47,17 @@ class ElectrodeGrid(QWidget):
         self.grid = [[self.STATE_IDLE for _ in range(self.cols)] for _ in range(self.rows)]
 
         # 单元格大小和间距（可调整）
-        self.cell_size = 40
-        self.cell_margin = 2
-        self.border_width = 1
+        self.cell_size = 48
+        self.cell_margin = 4
+        self.border_width = 0.8
+        self.border_radius = 5  # 圆角半径
 
         # 设置最小尺寸
         self.setMinimumSize(
-            self.cols * (self.cell_size + self.cell_margin) + 20,
-            self.rows * (self.cell_size + self.cell_margin) + 20
+            self.cols * (self.cell_size + self.cell_margin) + 24,
+            self.rows * (self.cell_size + self.cell_margin) + 24
         )
-
-        # 字体
-        self.font = QFont("Arial", 8)
+        self.setStyleSheet("background-color: #fafafa;")
 
     def set_cell_state(self, row, col, state):
         """设置指定单元格的状态。"""
@@ -108,8 +107,8 @@ class ElectrodeGrid(QWidget):
 
     def _get_cell_rect(self, row, col):
         """获取单元格的绘制矩形。"""
-        x = col * (self.cell_size + self.cell_margin) + 10
-        y = row * (self.cell_size + self.cell_margin) + 10
+        x = col * (self.cell_size + self.cell_margin) + 12
+        y = row * (self.cell_size + self.cell_margin) + 12
         return QRect(x, y, self.cell_size, self.cell_size)
 
     def _get_cell_from_pos(self, x, y):
@@ -131,9 +130,10 @@ class ElectrodeGrid(QWidget):
                 self.cycle_cell_state(row, col)
 
     def paintEvent(self, event):
-        """绘制网格和所有单元格。"""
+        """绘制网格和所有单元格（带圆角、柔和边框、无文字）。"""
         painter = QPainter(self)
-        painter.setFont(self.font)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
 
         for row in range(self.rows):
             for col in range(self.cols):
@@ -141,19 +141,23 @@ class ElectrodeGrid(QWidget):
                 state = self.grid[row][col]
                 color = self.STATE_COLORS[state]
 
-                # 绘制填充矩形
-                painter.fillRect(rect, color)
+                # 创建圆角路径
+                path = QPainterPath()
+                path.addRoundedRect(rect, self.border_radius, self.border_radius)
 
-                # 绘制边框
-                pen = QPen(QColor(0, 0, 0), self.border_width)
+                # 绘制填充矩形（带圆角，流畜优雅）
+                painter.fillPath(path, color)
+
+                # 绘制边框（置灰色、细缩小）
+                if state == self.STATE_IDLE:
+                    border_color = QColor(215, 215, 215)  # 浅置灰
+                else:
+                    border_color = QColor(200, 200, 200)  # 稍深的置灰
+                pen = QPen(border_color, self.border_width)
+                pen.setCapStyle(Qt.RoundCap)
+                pen.setJoinStyle(Qt.RoundJoin)
                 painter.setPen(pen)
-                painter.drawRect(rect)
-
-                # 绘制坐标标签（可选）
-                text = f"({row},{col})"
-                text_color = QColor(255, 255, 255) if state == self.STATE_OBSTACLE else QColor(0, 0, 0)
-                painter.setPen(text_color)
-                painter.drawText(rect, Qt.AlignCenter, text)
+                painter.drawPath(path)
 
     def reset_grid(self):
         """重置所有单元格为 Idle 状态。"""

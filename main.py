@@ -57,6 +57,10 @@ class DMFControllerWindow(QMainWindow):
         QMainWindow {
             background-color: #f5f5f5;
         }
+        QWidget {
+            font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
+            font-size: 12px;
+        }
         QGroupBox {
             color: #333333;
             background-color: #ffffff;
@@ -67,14 +71,14 @@ class DMFControllerWindow(QMainWindow):
             padding-left: 10px;
             padding-right: 10px;
             padding-bottom: 10px;
-            font-size: 11px;
+            font-size: 13px;
             font-weight: bold;
         }
         QGroupBox::title {
             subcontrol-origin: margin;
             left: 10px;
             padding: 0 3px 0 3px;
-            font-size: 12px;
+            font-size: 14px;
             font-weight: bold;
             color: #1a1a1a;
         }
@@ -82,9 +86,9 @@ class DMFControllerWindow(QMainWindow):
             border: none;
             border-radius: 5px;
             padding: 8px 12px;
-            font-size: 11px;
+            font-size: 12px;
             font-weight: bold;
-            color: white;
+            color: #333333;
             background-color: #5a7f94;
         }
         QPushButton:hover {
@@ -103,14 +107,14 @@ class DMFControllerWindow(QMainWindow):
             padding: 5px 8px;
             background-color: #ffffff;
             color: #333333;
-            font-size: 10px;
+            font-size: 12px;
         }
         QComboBox:focus {
             border: 2px solid #5a7f94;
         }
         QLabel {
             color: #333333;
-            font-size: 10px;
+            font-size: 12px;
         }
         """
         self.setStyleSheet(stylesheet)
@@ -187,7 +191,7 @@ class DMFControllerWindow(QMainWindow):
                 border-radius: 5px;
                 padding: 10px;
                 font-weight: bold;
-                font-size: 11px;
+                font-size: 12px;
             }
             QPushButton:hover {
                 background-color: #7ac776;
@@ -208,7 +212,7 @@ class DMFControllerWindow(QMainWindow):
                 border-radius: 5px;
                 padding: 10px;
                 font-weight: bold;
-                font-size: 11px;
+                font-size: 12px;
             }
             QPushButton:hover {
                 background-color: #f76464;
@@ -281,7 +285,7 @@ class DMFControllerWindow(QMainWindow):
         # ============ 状态栏 ============
         self.statusBar().setStyleSheet("QStatusBar { background-color: #ffffff; color: #333333; border-top: 1px solid #d0d0d0; }")
         self.statusBar().showMessage("就绪")
-        self.statusBar().setFont(QFont("Arial", 9))
+        self.statusBar().setFont(QFont("Arial", 10))
 
         # ============ 初始化串口列表 ============
         self.refresh_serial_ports()

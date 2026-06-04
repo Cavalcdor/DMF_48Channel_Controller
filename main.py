@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (
     QPushButton, QComboBox, QLabel, QStatusBar, QGroupBox, QMessageBox
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSlot
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QColor
 
 from src import global_cfg
 from src.serial_driver import SerialThread
@@ -41,6 +41,9 @@ class DMFControllerWindow(QMainWindow):
         self.serial_thread.error.connect(self.on_serial_error)
         self.serial_thread.port_opened.connect(self.on_port_opened)
 
+        # ============ 应用全局样式 ============
+        self.apply_stylesheet()
+
         # ============ 创建 UI ============
         self.init_ui()
 
@@ -48,21 +51,95 @@ class DMFControllerWindow(QMainWindow):
         self.serial_connected = False
         self.droplet_position = None
 
+    def apply_stylesheet(self):
+        """应用全局 QSS 样式表。"""
+        stylesheet = """
+        QMainWindow {
+            background-color: #f5f5f5;
+        }
+        QGroupBox {
+            color: #333333;
+            background-color: #ffffff;
+            border: 1px solid #d0d0d0;
+            border-radius: 6px;
+            margin-top: 10px;
+            padding-top: 10px;
+            padding-left: 10px;
+            padding-right: 10px;
+            padding-bottom: 10px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        QGroupBox::title {
+            subcontrol-origin: margin;
+            left: 10px;
+            padding: 0 3px 0 3px;
+            font-size: 12px;
+            font-weight: bold;
+            color: #1a1a1a;
+        }
+        QPushButton {
+            border: none;
+            border-radius: 5px;
+            padding: 8px 12px;
+            font-size: 11px;
+            font-weight: bold;
+            color: white;
+            background-color: #5a7f94;
+            transition: all 0.2s;
+        }
+        QPushButton:hover {
+            background-color: #6a8fa4;
+            transform: translate(0, -1px);
+        }
+        QPushButton:pressed {
+            background-color: #4a6f84;
+        }
+        QPushButton:disabled {
+            background-color: #cccccc;
+            color: #999999;
+        }
+        QComboBox {
+            border: 1px solid #b0b0b0;
+            border-radius: 4px;
+            padding: 5px 8px;
+            background-color: #ffffff;
+            color: #333333;
+            font-size: 10px;
+        }
+        QComboBox:focus {
+            border: 2px solid #5a7f94;
+        }
+        QLabel {
+            color: #333333;
+            font-size: 10px;
+        }
+        """
+        self.setStyleSheet(stylesheet)
+
     def init_ui(self):
         """初始化用户界面。"""
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
+        central_widget.setStyleSheet("background-color: #f5f5f5;")
 
         main_layout = QHBoxLayout(central_widget)
+        main_layout.setContentsMargins(12, 12, 12, 12)
+        main_layout.setSpacing(15)
 
         # ============ 左侧控制面板 ============
         left_panel = QVBoxLayout()
+        left_panel.setContentsMargins(0, 0, 0, 0)
+        left_panel.setSpacing(12)
 
         # 串口控制组
         serial_group = QGroupBox("串口连接")
         serial_layout = QVBoxLayout()
+        serial_layout.setContentsMargins(8, 8, 8, 8)
+        serial_layout.setSpacing(8)
 
         serial_combo_layout = QHBoxLayout()
+        serial_combo_layout.setSpacing(6)
         serial_combo_layout.addWidget(QLabel("端口："))
         self.port_combo = QComboBox()
         self.port_combo.setMinimumWidth(120)
@@ -78,7 +155,7 @@ class DMFControllerWindow(QMainWindow):
         serial_layout.addWidget(self.connect_btn)
 
         self.serial_status_label = QLabel("状态：未连接")
-        self.serial_status_label.setStyleSheet("color: red;")
+        self.serial_status_label.setStyleSheet("color: #d32f2f; font-weight: bold; font-size: 10px;")
         serial_layout.addWidget(self.serial_status_label)
 
         serial_group.setLayout(serial_layout)
@@ -87,9 +164,12 @@ class DMFControllerWindow(QMainWindow):
         # 路径规划和运动控制组
         control_group = QGroupBox("路径控制")
         control_layout = QVBoxLayout()
+        control_layout.setContentsMargins(8, 8, 8, 8)
+        control_layout.setSpacing(8)
 
         # 运动参数
         param_layout = QHBoxLayout()
+        param_layout.setSpacing(6)
         param_layout.addWidget(QLabel("步长延迟 (ms)："))
         self.delay_spinbox = QComboBox()
         self.delay_spinbox.addItems(["100", "200", "500", "1000"])
@@ -101,12 +181,44 @@ class DMFControllerWindow(QMainWindow):
 
         # 运动按钮
         self.run_path_btn = QPushButton("运行路径")
-        self.run_path_btn.setStyleSheet("background-color: #4CAF50; color: white;")
+        self.run_path_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #66bb6a;
+                color: white;
+                border: none;
+                border-radius: 5px;
+                padding: 10px;
+                font-weight: bold;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #7ac776;
+            }
+            QPushButton:pressed {
+                background-color: #558b5a;
+            }
+        """)
         self.run_path_btn.clicked.connect(self.on_run_path)
         control_layout.addWidget(self.run_path_btn)
 
         self.stop_btn = QPushButton("停止")
-        self.stop_btn.setStyleSheet("background-color: #f44336; color: white;")
+        self.stop_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #ef5350;
+                color: white;
+                border: none;
+                border-radius: 5px;
+                padding: 10px;
+                font-weight: bold;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #f76464;
+            }
+            QPushButton:pressed {
+                background-color: #d32f2f;
+            }
+        """)
         self.stop_btn.clicked.connect(self.on_stop)
         self.stop_btn.setEnabled(False)
         control_layout.addWidget(self.stop_btn)
@@ -117,12 +229,15 @@ class DMFControllerWindow(QMainWindow):
         # 网格操作组
         grid_control_group = QGroupBox("网格操作")
         grid_control_layout = QVBoxLayout()
+        grid_control_layout.setContentsMargins(8, 8, 8, 8)
+        grid_control_layout.setSpacing(8)
 
         self.reset_grid_btn = QPushButton("重置网格")
         self.reset_grid_btn.clicked.connect(self.on_reset_grid)
         grid_control_layout.addWidget(self.reset_grid_btn)
 
         clear_btns_layout = QHBoxLayout()
+        clear_btns_layout.setSpacing(6)
         self.clear_starts_btn = QPushButton("清除起点")
         self.clear_starts_btn.clicked.connect(lambda: self.on_clear_state(ElectrodeGrid.STATE_START))
         clear_btns_layout.addWidget(self.clear_starts_btn)
@@ -143,6 +258,8 @@ class DMFControllerWindow(QMainWindow):
         # 状态信息
         info_group = QGroupBox("信息")
         info_layout = QVBoxLayout()
+        info_layout.setContentsMargins(8, 8, 8, 8)
+        info_layout.setSpacing(8)
 
         self.info_label = QLabel("就绪")
         self.info_label.setWordWrap(True)
@@ -159,12 +276,14 @@ class DMFControllerWindow(QMainWindow):
 
         # ============ 右侧电极网格 ============
         main_layout.addLayout(left_panel, stretch=1)
-        main_layout.addWidget(self.grid_widget, stretch=2)
+        main_layout.addWidget(self.grid_widget, stretch=1)
 
         central_widget.setLayout(main_layout)
 
         # ============ 状态栏 ============
+        self.statusBar().setStyleSheet("QStatusBar { background-color: #ffffff; color: #333333; border-top: 1px solid #d0d0d0; }")
         self.statusBar().showMessage("就绪")
+        self.statusBar().setFont(QFont("Arial", 9))
 
         # ============ 初始化串口列表 ============
         self.refresh_serial_ports()

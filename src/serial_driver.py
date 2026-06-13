@@ -104,6 +104,9 @@ class SerialThread(QThread):
     def send_allon(self):
         return self.send_cmd("ALLON")
 
+    def send_alloff(self):
+        return self.send_cmd("ALLOFF")
+
     def run(self):
         """线程主循环：实时读取串口返回数据并通过信号发出。"""
         while self._running:

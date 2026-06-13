@@ -85,14 +85,15 @@ def bfs_shortest_path(start, target, obstacles=None):
 
 
 def path_to_indices(path):
-    """将路径坐标序列转换为硬件电极索引序列。
+    """将路径坐标序列转换为硬件电极索引序列（0-based）。
     
     Args:
         path: 路径坐标列表 [(row, col), ...]
         
     Returns:
         indices: 硬件电极索引列表 [idx0, idx1, ...]
-        索引公式：index = row * ELECTRODE_COLS + 1
+        索引公式：index = row * ELECTRODE_COLS + col
+        映射到 Arduino 继电器编号 0-47（S1-S48）。
     """
     if not path:
         return []
@@ -101,7 +102,7 @@ def path_to_indices(path):
     cols = global_cfg.ELECTRODE_COLS
 
     for row, col in path:
-        index = row * cols + 1
+        index = row * cols + col
         indices.append(index)
 
     return indices
@@ -130,6 +131,72 @@ def find_path_avoiding_obstacles(start, target, obstacles=None):
         'length': len(path),
         'valid': len(path) > 0,
     }
+
+
+def plan_multiple_paths(pairs, obstacles=None, sort_by_length=True):
+    """规划多条互不干扰的液滴路径。
+    
+    使用贪心策略：按最短路径长度排序，依次规划路径，
+    每条路径占用的电极会被标记为不可用，避免后续路径干扰。
+    
+    Args:
+        pairs: 列表，每个元素为 (start, target)，start 和 target 均为 (row, col)
+        obstacles: 障碍物集合，可选
+        sort_by_length: 是否按预期距离排序（短路径优先），默认 True
+        
+    Returns:
+        list[dict]: 每个元素包含：
+            - 'start': 起点 (row, col)
+            - 'target': 目标点 (row, col)
+            - 'path': 坐标路径列表 [(row, col), ...]，失败则为 []
+            - 'indices': 硬件索引列表，失败则为 []
+            - 'success': bool 是否找到路径
+            - 'droplet_id': int 液滴编号（从 1 开始）
+    """
+    if obstacles is None:
+        obstacles = set()
+    else:
+        obstacles = set(obstacles)
+
+    used_cells = set(obstacles)
+    results = []
+
+    # 按曼哈顿距离排序（短路径优先），提高整体成功率
+    indexed_pairs = list(enumerate(pairs))  # (original_index, (start, target))
+    if sort_by_length and len(indexed_pairs) > 1:
+        indexed_pairs.sort(key=lambda x: abs(x[1][0][0] - x[1][1][0]) + abs(x[1][0][1] - x[1][1][1]))
+    else:
+        # 保持原始顺序作为 droplet_id
+        pass
+
+    for droplet_id, (start, target) in indexed_pairs:
+        path = bfs_shortest_path(start, target, used_cells)
+
+        if path:
+            # 标记路径所有单元格为已占用（避免后续路径干涉）
+            for cell in path:
+                used_cells.add(cell)
+            results.append({
+                'droplet_id': droplet_id + 1,
+                'start': start,
+                'target': target,
+                'path': path,
+                'indices': path_to_indices(path),
+                'success': True,
+            })
+        else:
+            results.append({
+                'droplet_id': droplet_id + 1,
+                'start': start,
+                'target': target,
+                'path': [],
+                'indices': [],
+                'success': False,
+            })
+
+    # 按原始 droplet_id 排序恢复顺序
+    results.sort(key=lambda x: x['droplet_id'])
+    return results
 
 
 def multi_target_pathfinding(start, targets, obstacles=None):

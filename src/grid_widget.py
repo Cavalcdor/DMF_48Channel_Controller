@@ -1,6 +1,6 @@
 import math
 
-from PyQt5.QtWidgets import QWidget
+from PyQt5.QtWidgets import QWidget, QSizePolicy
 from PyQt5.QtCore import Qt, QRect, QRectF, QSize, pyqtSignal
 from PyQt5.QtGui import QPainter, QColor, QPen, QFont, QPainterPath, QBrush
 from . import global_cfg
@@ -33,10 +33,10 @@ class ElectrodeGrid(QWidget):
     }
 
     STATE_COLORS = {
-        STATE_IDLE: QColor(235, 235, 235),      # 柔和浅灭
-        STATE_START: QColor(59, 120, 255),      # 现代轩蓝
-        STATE_TARGET: QColor(255, 179, 32),     # 流畜橙
-        STATE_OBSTACLE: QColor(38, 38, 38),     # 深阅
+        STATE_IDLE: QColor(235, 240, 248),      # 柔和浅蓝灰
+        STATE_START: QColor(59, 130, 246),      # 现代亮蓝
+        STATE_TARGET: QColor(245, 158, 11),     # 琥珀橙
+        STATE_OBSTACLE: QColor(30, 41, 59),     # 深石板色
     }
 
     # 路径颜色调色板（半透明，用于叠加显示多条路径）
@@ -63,10 +63,17 @@ class ElectrodeGrid(QWidget):
         QColor(33, 51, 141),
     ]
 
+    # 交互模式常量
+    MODE_SD = "sd"          # 起点/终点设置模式
+    MODE_OBSTACLE = "obstacle"  # 障碍物设置模式
+
     cell_changed = pyqtSignal(int, int, int)  # row, col, state
 
     # 信号：液滴配置变化（用于主窗口更新状态显示）
     droplet_config_changed = pyqtSignal()
+
+    # 信号：交互模式变化
+    mode_changed = pyqtSignal(str)  # "sd" 或 "obstacle"
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -80,7 +87,7 @@ class ElectrodeGrid(QWidget):
         self.cell_size = 110
         self.cell_margin = 8
         self.border_width = 1.5
-        self.border_radius = 10  # 圆角半径
+        self.border_radius = 8  # 圆角半径
 
         # 显示的路径数据（用于路径可视化叠加）
         self.display_paths = []  # list[dict]: {'path': [(r,c),...], 'droplet_id': int, 'success': bool}
@@ -90,18 +97,25 @@ class ElectrodeGrid(QWidget):
         self.droplet_starts = {}             # droplet_id -> (row, col)
         self.droplet_targets = {}            # droplet_id -> (row, col)
 
-        # 设置最小尺寸
-        self.setMinimumSize(968, 732)
+        # ============ 交互模式 ============
+        self.mode = self.MODE_SD             # 默认：起点/终点设置模式
+
         self.setStyleSheet("background-color: transparent;")
+        self.setMinimumSize(200, 150)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        # 初始计算单元格大小
+        self._recalc_cell_size()
 
     def set_droplet_id(self, droplet_id):
         """设置当前操作的液滴编号（由主窗口调用）。"""
         self.current_droplet_id = max(1, droplet_id)
 
-    def cycle_cell_state(self, row, col, droplet_id=None):
+    def cycle_cell_state(self, row, col, droplet_id=None, allow_obstacle=True):
         """循环切换单元格状态，并与液滴编号关联。
         
-        点击顺序：Idle → Start(N) → Target(N) → Obstacle → Idle
+        点击顺序：Idle → Start(N) → Target(N) → (Obstacle →) Idle
+        allow_obstacle=False 时在 Target 之后回到 Idle（跳过 Obstacle）。
         droplet_id: 仅由程序内部调用时传入，外部通过 set_droplet_id 设置。
         """
         if not (0 <= row < self.rows and 0 <= col < self.cols):
@@ -109,7 +123,13 @@ class ElectrodeGrid(QWidget):
 
         did = droplet_id if droplet_id is not None else self.current_droplet_id
         current_state = self.grid[row][col]
-        next_state = (current_state + 1) % 4
+
+        # 计算下一个状态
+        if allow_obstacle:
+            next_state = (current_state + 1) % 4
+        else:
+            # Idle(0) → Start(1) → Target(2) → Idle(0)，跳过 Obstacle(3)
+            next_state = (current_state + 1) % 3
 
         # 如果当前是 Start/Target，从 droplet 字典中移除
         if current_state == self.STATE_START:
@@ -203,13 +223,54 @@ class ElectrodeGrid(QWidget):
         return None
 
     def mousePressEvent(self, event):
-        """处理鼠标按下事件。左键点击循环切换单元格状态（关联当前液滴编号）。"""
+        """处理鼠标按下事件。根据当前交互模式执行不同操作。"""
         if event.button() == Qt.LeftButton:
             pos = event.pos()
             cell = self._get_cell_from_pos(pos.x(), pos.y())
             if cell:
                 row, col = cell
-                self.cycle_cell_state(row, col, droplet_id=self.current_droplet_id)
+
+                if self.mode == self.MODE_OBSTACLE:
+                    # 障碍物模式：Idle ↔ Obstacle 切换
+                    if self.grid[row][col] == self.STATE_OBSTACLE:
+                        self.grid[row][col] = self.STATE_IDLE
+                    elif self.grid[row][col] == self.STATE_IDLE:
+                        self.grid[row][col] = self.STATE_OBSTACLE
+                    self.display_paths = []
+                    self.cell_changed.emit(row, col, self.grid[row][col])
+                    self.update()
+                elif self.mode == self.MODE_SD:
+                    # 智能模式：点空闲格自动设为起点/终点，点已设格取消
+                    did = self.current_droplet_id
+
+                    # 点击自己的起点 → 取消
+                    if did in self.droplet_starts and (row, col) == self.droplet_starts[did]:
+                        del self.droplet_starts[did]
+                        self.grid[row][col] = self.STATE_IDLE
+                    # 点击自己的终点 → 取消
+                    elif did in self.droplet_targets and (row, col) == self.droplet_targets[did]:
+                        del self.droplet_targets[did]
+                        self.grid[row][col] = self.STATE_IDLE
+                    # 点击别人的起点/终点 → 忽略
+                    elif self.grid[row][col] != self.STATE_IDLE:
+                        return
+                    # 空闲格子 → 自动设为起点或终点
+                    else:
+                        if did not in self.droplet_starts:
+                            # 还没有起点 → 设为起点
+                            self.droplet_starts[did] = (row, col)
+                            self.grid[row][col] = self.STATE_START
+                        else:
+                            # 已有起点 → 设为目标（覆盖旧目标）
+                            if did in self.droplet_targets:
+                                r, c = self.droplet_targets[did]
+                                self.grid[r][c] = self.STATE_IDLE
+                            self.droplet_targets[did] = (row, col)
+                            self.grid[row][col] = self.STATE_TARGET
+                    self.display_paths = []
+                    self.cell_changed.emit(row, col, self.grid[row][col])
+                    self.droplet_config_changed.emit()
+                    self.update()
 
     def _build_cell_labels(self):
         """构建单元格标签映射：{(row, col): 'S1'|'T2'|...}"""
@@ -246,9 +307,9 @@ class ElectrodeGrid(QWidget):
 
                 # 绘制边框
                 if state == self.STATE_IDLE:
-                    border_color = QColor(215, 215, 215)
+                    border_color = QColor(208, 213, 221)
                 else:
-                    border_color = QColor(200, 200, 200)
+                    border_color = QColor(190, 195, 205)
                 pen = QPen(border_color, self.border_width)
                 pen.setCapStyle(Qt.RoundCap)
                 pen.setJoinStyle(Qt.RoundJoin)
@@ -261,13 +322,15 @@ class ElectrodeGrid(QWidget):
                     did = int(label[1:])
                     color_index = (did - 1) % len(self.PATH_BORDER_COLORS)
                     painter.setPen(self.PATH_BORDER_COLORS[color_index])
-                    painter.setFont(QFont("Arial", 22, QFont.Bold))
+                    fs = max(10, self.cell_size // 5)
+                    painter.setFont(QFont("Arial", fs, QFont.Bold))
                     painter.drawText(rect, Qt.AlignCenter, label)
                 else:
                     text = f"({row},{col})" if state != self.STATE_OBSTACLE else ""
-                    text_color = QColor(255, 255, 255) if state == self.STATE_OBSTACLE else QColor(70, 70, 70)
+                    text_color = QColor(255, 255, 255) if state == self.STATE_OBSTACLE else QColor(71, 85, 105)
                     painter.setPen(text_color)
-                    painter.setFont(QFont("Arial", 14))
+                    fs = max(8, self.cell_size // 8)
+                    painter.setFont(QFont("Arial", fs))
                     painter.drawText(rect, Qt.AlignCenter, text)
 
         # ============ 第二层：叠加绘制路径 ============
@@ -304,7 +367,8 @@ class ElectrodeGrid(QWidget):
 
                 # 路径步骤编号
                 painter.setPen(border_color)
-                font = QFont("Arial", 18, QFont.Bold)
+                fs = max(10, self.cell_size // 6)
+                font = QFont("Arial", fs, QFont.Bold)
                 painter.setFont(font)
                 step_text = str(step + 1)
 
@@ -383,6 +447,36 @@ class ElectrodeGrid(QWidget):
         self.display_paths = []
         self.update()
 
+    def rebuild_grid(self, rows, cols):
+        """重建网格为指定尺寸，所有数据重置。"""
+        self.rows = rows
+        self.cols = cols
+        self.grid = [[self.STATE_IDLE] * cols for _ in range(rows)]
+        self.display_paths = []
+        self.droplet_starts.clear()
+        self.droplet_targets.clear()
+        self._recalc_cell_size()
+        self.droplet_config_changed.emit()
+        self.update()
+
+    def _recalc_cell_size(self):
+        """根据当前小部件尺寸重新计算单元格大小。"""
+        w = self.width()
+        h = self.height()
+        margin = 12
+        gap = 8
+        # 按宽度和高度分别计算，取较小值确保完整显示
+        cell_by_w = (w - 2 * margin - (self.cols - 1) * gap) // self.cols
+        cell_by_h = (h - 2 * margin - (self.rows - 1) * gap) // self.rows
+        self.cell_size = max(30, min(cell_by_w, cell_by_h))
+        self.cell_margin = max(2, self.cell_size // 14)
+
+    def resizeEvent(self, event):
+        """窗口大小变化时重新计算单元格尺寸并重绘。"""
+        self._recalc_cell_size()
+        self.update()
+        super().resizeEvent(event)
+
     def reset_grid(self):
         """重置所有单元格为 Idle 状态，清除路径显示和液滴配对。"""
         self.display_paths = []
@@ -393,6 +487,17 @@ class ElectrodeGrid(QWidget):
                 self.grid[row][col] = self.STATE_IDLE
         self.droplet_config_changed.emit()
         self.update()
+
+    def set_mode(self, mode):
+        """设置交互模式。
+        
+        Args:
+            mode: 'sd' — 起点/终点设置模式，'obstacle' — 障碍物设置模式
+        """
+        if mode not in (self.MODE_SD, self.MODE_OBSTACLE):
+            return
+        self.mode = mode
+        self.mode_changed.emit(mode)
 
     def clear_state(self, state):
         """清除指定状态的所有单元格，同时清除路径显示。"""

@@ -1,15 +1,18 @@
 """
 寻路算法模块 - DMF 电极控制
 
-提供 BFS 最短路径搜索功能，用于在电极网格上规划路径。
+提供 A* 最短路径搜索功能，用于在电极网格上规划路径。
+采用曼哈顿距离作为启发式函数，比 BFS 搜索效率更高。
 """
 
-from collections import deque
+import heapq
 from . import global_cfg
 
 
-def bfs_shortest_path(start, target, obstacles=None):
-    """使用 BFS 找到从起点到目标的最短路径。
+def a_star_shortest_path(start, target, obstacles=None):
+    """使用 A* 算法找到从起点到目标的最短路径。
+    
+    采用曼哈顿距离启发式函数，完全匹配四方向移动约束。
     
     Args:
         start: 起点 (row, col)
@@ -42,16 +45,21 @@ def bfs_shortest_path(start, target, obstacles=None):
     if start == target:
         return [start]
 
-    # BFS
-    queue = deque([start])
-    visited = {start}
-    parent = {start: None}
+    def heuristic(a, b):
+        """曼哈顿距离启发式函数。"""
+        return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
     # 4 方向移动（上、下、左、右）
     directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
 
-    while queue:
-        current = queue.popleft()
+    # A* 主循环
+    open_set = [(0, start)]
+    g_score = {start: 0}
+    parent = {start: None}
+    visited = {start}
+
+    while open_set:
+        _, current = heapq.heappop(open_set)
 
         if current == target:
             # 重构路径
@@ -62,23 +70,27 @@ def bfs_shortest_path(start, target, obstacles=None):
                 node = parent[node]
             return path[::-1]  # 反转得到从起点到终点的路径
 
-        # 探索邻居
         for dr, dc in directions:
             next_row = current[0] + dr
             next_col = current[1] + dc
+            neighbor = (next_row, next_col)
 
             # 检查边界
             if not (0 <= next_row < rows and 0 <= next_col < cols):
                 continue
 
             # 检查是否已访问或是障碍物
-            next_pos = (next_row, next_col)
-            if next_pos in visited or next_pos in obstacles:
+            if neighbor in visited or neighbor in obstacles:
                 continue
 
-            visited.add(next_pos)
-            parent[next_pos] = current
-            queue.append(next_pos)
+            tentative_g = g_score[current] + 1
+
+            if neighbor not in g_score or tentative_g < g_score[neighbor]:
+                parent[neighbor] = current
+                g_score[neighbor] = tentative_g
+                f_score = tentative_g + heuristic(neighbor, target)
+                visited.add(neighbor)
+                heapq.heappush(open_set, (f_score, neighbor))
 
     # 没有找到路径
     return []
@@ -123,7 +135,7 @@ def find_path_avoiding_obstacles(start, target, obstacles=None):
         - 'length': 路径长度（单元格数）
         - 'valid': 是否找到有效路径
     """
-    path = bfs_shortest_path(start, target, obstacles)
+    path = a_star_shortest_path(start, target, obstacles)
 
     return {
         'path': path,
@@ -170,7 +182,7 @@ def plan_multiple_paths(pairs, obstacles=None, sort_by_length=True):
         pass
 
     for droplet_id, (start, target) in indexed_pairs:
-        path = bfs_shortest_path(start, target, used_cells)
+        path = a_star_shortest_path(start, target, used_cells)
 
         if path:
             # 标记路径所有单元格为已占用（避免后续路径干涉）
@@ -185,6 +197,22 @@ def plan_multiple_paths(pairs, obstacles=None, sort_by_length=True):
                 'success': True,
             })
         else:
+            # 诊断失败原因
+            reason = "无可达路径"
+            if start in obstacles:
+                reason = "起点被障碍物阻挡"
+            elif target in obstacles:
+                reason = "终点被障碍物阻挡"
+            elif start == target:
+                reason = "起点等于终点"
+            else:
+                # 检查路径是否被其他液滴路径阻挡
+                other_cells = used_cells - obstacles
+                if other_cells:
+                    # 简单试探：去掉其他路径占用再试一次
+                    test_path = a_star_shortest_path(start, target, obstacles)
+                    if test_path:
+                        reason = "路径被其他液滴占用"
             results.append({
                 'droplet_id': droplet_id + 1,
                 'start': start,
@@ -192,6 +220,7 @@ def plan_multiple_paths(pairs, obstacles=None, sort_by_length=True):
                 'path': [],
                 'indices': [],
                 'success': False,
+                'fail_reason': reason,
             })
 
     # 按原始 droplet_id 排序恢复顺序
@@ -224,7 +253,7 @@ def multi_target_pathfinding(start, targets, obstacles=None):
     all_paths = {}
 
     for target in targets:
-        path = bfs_shortest_path(start, target, obstacles)
+        path = a_star_shortest_path(start, target, obstacles)
         if path:
             distance = len(path) - 1  # 边数 = 单元格数 - 1
             all_paths[target] = {

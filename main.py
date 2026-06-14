@@ -4,6 +4,7 @@ PyQt5 界面，整合串口通信、电极网格、寻路算法
 """
 
 import sys
+from collections import Counter
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QComboBox, QLabel, QStatusBar, QGroupBox, QMessageBox,
@@ -15,7 +16,7 @@ from PyQt5.QtGui import QFont, QColor
 from src import global_cfg
 from src.serial_driver import SerialThread
 from src.grid_widget import ElectrodeGrid
-from src.path_algorithm import bfs_shortest_path, path_to_indices, plan_multiple_paths
+from src.path_algorithm import a_star_shortest_path, path_to_indices, plan_multiple_paths
 
 
 class DMFControllerWindow(QMainWindow):
@@ -27,6 +28,7 @@ class DMFControllerWindow(QMainWindow):
         self.setWindowTitle("DMF 48通道控制器")
         self.setGeometry(50, 50, 1800, 960)
         self.setMinimumSize(1200, 700)
+        self.showMaximized()
 
         # ============ 初始化模块 ============
         self.serial_thread = SerialThread()
@@ -46,6 +48,7 @@ class DMFControllerWindow(QMainWindow):
 
         # ============ 连接网格信号 ============
         self.grid_widget.droplet_config_changed.connect(self.update_droplet_info)
+        self.grid_widget.mode_changed.connect(self.on_mode_changed)
 
         # ============ 应用全局样式 ============
         self.apply_stylesheet()
@@ -61,85 +64,249 @@ class DMFControllerWindow(QMainWindow):
         self.update_droplet_info()
 
     def apply_stylesheet(self):
-        """应用全局 QSS 样式表。"""
+        """应用全局 QSS 样式表（商业级设计系统）。"""
         stylesheet = """
-        QMainWindow {
-            background-color: #f7f7f7;
+        /* ========== 全局基调 ========== */
+        QMainWindow, QWidget#central_widget {
+            background-color: #f0f2f5;
+        }
+
+        /* 顶部标题栏 */
+        QWidget#app_header {
+            background-color: #1a2332;
+            border-bottom: 2px solid #2d3e50;
+        }
+
+        /* 透明容器 */
+        QWidget#left_sidebar,
+        QWidget#center_widget,
+        QWidget#right_sidebar {
+            background-color: transparent;
+        }
+
+        /* 网格卡片 */
+        QWidget#grid_card {
+            background-color: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
         }
         QWidget {
-            font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
-            font-size: 20px;
+            font-family: "Microsoft YaHei", "Segoe UI", -apple-system, Arial, sans-serif;
+            font-size: 15px;
         }
+
+        /* ========== GroupBox 卡片容器 ========== */
         QGroupBox {
-            color: #303030;
             background-color: #ffffff;
-            border: 1px solid #d6d6d6;
+            border: 1px solid #e2e8f0;
             border-radius: 12px;
-            margin-top: 12px;
-            padding-top: 20px;
-            padding-left: 18px;
-            padding-right: 18px;
-            padding-bottom: 18px;
-            font-size: 20px;
+            margin-top: 10px;
+            padding-top: 14px;
+            padding-left: 14px;
+            padding-right: 14px;
+            padding-bottom: 14px;
+            font-size: 15px;
             font-weight: 600;
+            color: #0f172a;
         }
         QGroupBox::title {
             subcontrol-origin: margin;
             subcontrol-position: top left;
-            left: 14px;
+            left: 16px;
             padding: 0 8px;
-            font-size: 24px;
+            font-size: 16px;
             font-weight: 700;
-            color: #202020;
+            color: #0f172a;
+            letter-spacing: 0.3px;
         }
+
+        /* ========== 统一按钮体系 ========== */
+        /* 基础按钮 — 中性灰色边框, 所有按钮继承此风格 */
         QPushButton {
-            border: 1px solid #cdd5db;
-            border-radius: 10px;
-            padding: 14px 20px;
-            font-size: 19px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            padding: 10px 18px;
+            font-size: 15px;
             font-weight: 600;
-            color: #222222;
-            background-color: #e8edf2;
+            color: #374151;
+            background-color: #ffffff;
         }
         QPushButton:hover {
-            background-color: #edf2f6;
+            background-color: #f3f4f6;
+            border-color: #9ca3af;
         }
         QPushButton:pressed {
-            background-color: #dbe3ea;
+            background-color: #e5e7eb;
         }
         QPushButton:disabled {
-            background-color: #d9d9d9;
-            color: #8c8c8c;
+            background-color: #f3f4f6;
+            color: #9ca3af;
+            border-color: #e5e7eb;
         }
+
+        /* 柔和次级按钮 — 通用中性风格 */
         QPushButton#soft_btn {
-            background-color: #e8edf2;
-            color: #222222;
-            border: 1px solid #cdd5db;
+            background-color: #ffffff;
+            color: #374151;
+            border: 1px solid #d1d5db;
         }
         QPushButton#soft_btn:hover {
-            background-color: #edf2f6;
+            background-color: #f3f4f6;
+            border-color: #9ca3af;
         }
         QPushButton#soft_btn:pressed {
-            background-color: #dbe3ea;
+            background-color: #e5e7eb;
         }
+        QPushButton#soft_btn:checked {
+            background-color: #e5e7eb;
+            border: 1px solid #9ca3af;
+        }
+
+        /* 起点/终点模式按钮 — 浅蓝底, 选中变深蓝 */
+        QPushButton#mode_sd_btn {
+            background-color: #eef2ff;
+            color: #4338ca;
+            border: 1px solid #c7d2fe;
+        }
+        QPushButton#mode_sd_btn:hover {
+            background-color: #e0e7ff;
+            border-color: #a5b4fc;
+        }
+        QPushButton#mode_sd_btn:pressed {
+            background-color: #c7d2fe;
+        }
+        QPushButton#mode_sd_btn:checked {
+            background-color: #4f46e5;
+            border: none;
+            color: #ffffff;
+        }
+
+        /* 障碍物模式按钮 — 浅灰底, 选中变深灰 */
+        QPushButton#mode_obstacle_btn {
+            background-color: #f3f4f6;
+            color: #374151;
+            border: 1px solid #d1d5db;
+        }
+        QPushButton#mode_obstacle_btn:hover {
+            background-color: #e5e7eb;
+            border-color: #9ca3af;
+        }
+        QPushButton#mode_obstacle_btn:pressed {
+            background-color: #d1d5db;
+        }
+        QPushButton#mode_obstacle_btn:checked {
+            background-color: #374151;
+            border: none;
+            color: #ffffff;
+        }
+
+        /* 规划路径按钮 — 蓝色, 规划/预览操作 */
+        QPushButton#accent_btn {
+            background-color: #2563eb;
+            color: #ffffff;
+            border: none;
+        }
+        QPushButton#accent_btn:hover {
+            background-color: #3b82f6;
+        }
+        QPushButton#accent_btn:pressed {
+            background-color: #1d40af;
+        }
+        QPushButton#accent_btn:disabled {
+            background-color: #93c5fd;
+            color: #ffffff;
+        }
+
+        /* 运行路径按钮 — 绿色, 启动/执行操作 */
+        QPushButton#success_btn {
+            background-color: #059669;
+            color: #ffffff;
+            border: none;
+        }
+        QPushButton#success_btn:hover {
+            background-color: #10b981;
+        }
+        QPushButton#success_btn:pressed {
+            background-color: #047857;
+        }
+        QPushButton#success_btn:disabled {
+            background-color: #6ee7b7;
+            color: #ffffff;
+        }
+
+        /* 停止按钮 — 亮红, 紧急停止操作 */
+        QPushButton#danger_btn {
+            background-color: #e53935;
+            color: #ffffff;
+            border: none;
+        }
+        QPushButton#danger_btn:hover {
+            background-color: #ef5350;
+        }
+        QPushButton#danger_btn:pressed {
+            background-color: #c62828;
+        }
+        QPushButton#danger_btn:disabled {
+            background-color: #ef9a9a;
+            color: #ffffff;
+        }
+
+        /* ========== 输入控件 ========== */
         QComboBox {
-            border: 1px solid #c4cbd2;
+            border: 1px solid #e2e8f0;
             border-radius: 8px;
-            padding: 12px 14px;
+            padding: 8px 12px;
             background-color: #ffffff;
-            color: #303030;
-            font-size: 19px;
+            color: #0f172a;
+            font-size: 15px;
         }
         QComboBox:focus {
-            border: 1px solid #7aa0c8;
+            border-color: #93c5fd;
         }
+        QComboBox::drop-down {
+            border: none;
+            width: 28px;
+        }
+        QComboBox::down-arrow {
+            image: none;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-top: 6px solid #64748b;
+            margin-right: 4px;
+        }
+
+        QLineEdit {
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 8px 12px;
+            background-color: #ffffff;
+            color: #0f172a;
+            font-size: 15px;
+        }
+        QLineEdit:focus {
+            border-color: #93c5fd;
+        }
+
+        QSpinBox {
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 6px 10px;
+            background-color: #ffffff;
+            color: #0f172a;
+            font-size: 15px;
+        }
+        QSpinBox:focus {
+            border-color: #93c5fd;
+        }
+
+        /* ========== 标签 ========== */
         QLabel {
-            color: #303030;
-            font-size: 19px;
+            color: #0f172a;
+            font-size: 15px;
         }
         QLabel[helper="true"] {
-            color: #666666;
-            font-size: 17px;
+            color: #64748b;
+            font-size: 14px;
         }
         """
         self.setStyleSheet(stylesheet)
@@ -147,8 +314,8 @@ class DMFControllerWindow(QMainWindow):
     def init_ui(self):
         """初始化用户界面。"""
         central_widget = QWidget()
+        central_widget.setObjectName("central_widget")
         self.setCentralWidget(central_widget)
-        central_widget.setStyleSheet("background-color: #f7f7f7;")
 
         # ============ 外层垂直布局: 标题栏 + 主内容 ============
         outer_layout = QVBoxLayout(central_widget)
@@ -157,11 +324,8 @@ class DMFControllerWindow(QMainWindow):
 
         # ---------- 顶部标题栏 ----------
         header = QWidget()
-        header.setFixedHeight(64)
-        header.setStyleSheet("""
-            background-color: #1a2332;
-            border-bottom: 2px solid #2d3e50;
-        """)
+        header.setObjectName("app_header")
+        header.setFixedHeight(52)
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(24, 0, 24, 0)
 
@@ -183,11 +347,11 @@ class DMFControllerWindow(QMainWindow):
 
         self.header_status_label = QLabel("● 系统就绪")
         self.header_status_label.setStyleSheet("""
-            font-size: 15px;
-            color: #a5d6a7;
-            background: transparent;
+            font-size: 14px;
+            color: #4ade80;
+            background: rgba(74, 222, 128, 0.1);
             padding: 4px 14px;
-            border: 1px solid #a5d6a7;
+            border: 1px solid #4ade80;
             border-radius: 12px;
         """)
         header_layout.addWidget(self.header_status_label)
@@ -196,24 +360,24 @@ class DMFControllerWindow(QMainWindow):
 
         # ---------- 主内容区域 ----------
         main_layout = QHBoxLayout()
-        main_layout.setContentsMargins(20, 16, 20, 16)
-        main_layout.setSpacing(20)
+        main_layout.setContentsMargins(16, 12, 16, 12)
+        main_layout.setSpacing(16)
 
         # ============ 左侧控制面板 ============
         left_sidebar = QWidget()
-        left_sidebar.setFixedWidth(560)
+        left_sidebar.setObjectName("left_sidebar")
+        left_sidebar.setFixedWidth(820)
         left_sidebar.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
-        left_sidebar.setStyleSheet("background-color: transparent;")
 
         left_panel = QVBoxLayout(left_sidebar)
         left_panel.setContentsMargins(0, 0, 0, 0)
-        left_panel.setSpacing(18)
+        left_panel.setSpacing(8)
 
         # 串口控制组
         serial_group = QGroupBox("串口连接")
         serial_layout = QVBoxLayout()
-        serial_layout.setContentsMargins(16, 16, 16, 16)
-        serial_layout.setSpacing(12)
+        serial_layout.setContentsMargins(12, 12, 12, 12)
+        serial_layout.setSpacing(8)
 
         serial_combo_layout = QHBoxLayout()
         serial_combo_layout.setSpacing(10)
@@ -235,7 +399,7 @@ class DMFControllerWindow(QMainWindow):
 
         self.serial_status_label = QLabel("状态：未连接")
         self.serial_status_label.setProperty("helper", True)
-        self.serial_status_label.setStyleSheet("color: #d32f2f; font-weight: 600; font-size: 18px;")
+        self.serial_status_label.setStyleSheet("color: #dc2626; font-weight: 600; font-size: 16px;")
         serial_layout.addWidget(self.serial_status_label)
 
         serial_group.setLayout(serial_layout)
@@ -244,8 +408,8 @@ class DMFControllerWindow(QMainWindow):
         # 路径规划和运动控制组
         control_group = QGroupBox("路径控制")
         control_layout = QVBoxLayout()
-        control_layout.setContentsMargins(16, 16, 16, 16)
-        control_layout.setSpacing(12)
+        control_layout.setContentsMargins(12, 12, 12, 12)
+        control_layout.setSpacing(8)
 
         param_layout = QHBoxLayout()
         param_layout.setSpacing(10)
@@ -258,45 +422,18 @@ class DMFControllerWindow(QMainWindow):
         param_layout.addStretch()
         control_layout.addLayout(param_layout)
 
+        self.plan_path_btn = QPushButton("规划路径")
+        self.plan_path_btn.setObjectName("accent_btn")
+        self.plan_path_btn.clicked.connect(self.on_plan_path)
+        control_layout.addWidget(self.plan_path_btn)
+
         self.run_path_btn = QPushButton("运行路径")
-        self.run_path_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #66bb6a;
-                color: white;
-                border: none;
-                border-radius: 10px;
-                padding: 18px;
-                font-weight: bold;
-                font-size: 20px;
-            }
-            QPushButton:hover {
-                background-color: #7ac776;
-            }
-            QPushButton:pressed {
-                background-color: #558b5a;
-            }
-        """)
+        self.run_path_btn.setObjectName("success_btn")
         self.run_path_btn.clicked.connect(self.on_run_path)
         control_layout.addWidget(self.run_path_btn)
 
         self.stop_btn = QPushButton("停止")
-        self.stop_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #ef5350;
-                color: white;
-                border: none;
-                border-radius: 10px;
-                padding: 18px;
-                font-weight: bold;
-                font-size: 20px;
-            }
-            QPushButton:hover {
-                background-color: #f76464;
-            }
-            QPushButton:pressed {
-                background-color: #d32f2f;
-            }
-        """)
+        self.stop_btn.setObjectName("danger_btn")
         self.stop_btn.clicked.connect(self.on_stop)
         self.stop_btn.setEnabled(False)
         control_layout.addWidget(self.stop_btn)
@@ -304,19 +441,88 @@ class DMFControllerWindow(QMainWindow):
         control_group.setLayout(control_layout)
         left_panel.addWidget(control_group)
 
-        # 网格操作组
+        # 网格操作组 — 交互模式切换 + 网格配置
         grid_control_group = QGroupBox("网格操作")
         grid_control_layout = QVBoxLayout()
-        grid_control_layout.setContentsMargins(16, 16, 16, 16)
-        grid_control_layout.setSpacing(12)
+        grid_control_layout.setContentsMargins(12, 12, 12, 12)
+        grid_control_layout.setSpacing(8)
 
-        self.reset_grid_btn = QPushButton("重置网格")
-        self.reset_grid_btn.setObjectName("soft_btn")
-        self.reset_grid_btn.clicked.connect(self.on_reset_grid)
-        grid_control_layout.addWidget(self.reset_grid_btn)
+        # ---- 网格尺寸配置 ----
+        grid_size_layout = QHBoxLayout()
+        grid_size_layout.setSpacing(6)
+        grid_size_layout.addWidget(QLabel("行："), 0)
+        self.grid_rows_label = QLabel(str(global_cfg.ELECTRODE_ROWS))
+        self.grid_rows_label.setAlignment(Qt.AlignCenter)
+        self.grid_rows_label.setFixedSize(50, 40)
+        self.grid_rows_label.setStyleSheet("""
+            background: white; border: 1px solid #e2e8f0;
+            border-radius: 8px; font-size: 18px; font-weight: 700; color: #0f172a;
+        """)
+        rows_btn_layout = QVBoxLayout()
+        rows_btn_layout.setSpacing(1)
+        self.grid_rows_up = QPushButton("▲")
+        self.grid_rows_up.setFixedSize(32, 19)
+        self.grid_rows_up.setStyleSheet("QPushButton{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:4px;font-size:10px;color:#475569;padding:0} QPushButton:hover{background:#e2e8f0}")
+        self.grid_rows_up.clicked.connect(lambda: self._spin_row(1))
+        self.grid_rows_down = QPushButton("▼")
+        self.grid_rows_down.setFixedSize(32, 19)
+        self.grid_rows_down.setStyleSheet("QPushButton{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:4px;font-size:10px;color:#475569;padding:0} QPushButton:hover{background:#e2e8f0}")
+        self.grid_rows_down.clicked.connect(lambda: self._spin_row(-1))
+        rows_btn_layout.addWidget(self.grid_rows_up)
+        rows_btn_layout.addWidget(self.grid_rows_down)
+        grid_size_layout.addWidget(self.grid_rows_label, 0)
+        grid_size_layout.addLayout(rows_btn_layout)
 
+        grid_size_layout.addWidget(QLabel("列："), 0)
+        self.grid_cols_label = QLabel(str(global_cfg.ELECTRODE_COLS))
+        self.grid_cols_label.setAlignment(Qt.AlignCenter)
+        self.grid_cols_label.setFixedSize(50, 40)
+        self.grid_cols_label.setStyleSheet("""
+            background: white; border: 1px solid #e2e8f0;
+            border-radius: 8px; font-size: 18px; font-weight: 700; color: #0f172a;
+        """)
+        cols_btn_layout = QVBoxLayout()
+        cols_btn_layout.setSpacing(1)
+        self.grid_cols_up = QPushButton("▲")
+        self.grid_cols_up.setFixedSize(32, 19)
+        self.grid_cols_up.setStyleSheet("QPushButton{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:4px;font-size:10px;color:#475569;padding:0} QPushButton:hover{background:#e2e8f0}")
+        self.grid_cols_up.clicked.connect(lambda: self._spin_col(1))
+        self.grid_cols_down = QPushButton("▼")
+        self.grid_cols_down.setFixedSize(32, 19)
+        self.grid_cols_down.setStyleSheet("QPushButton{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:4px;font-size:10px;color:#475569;padding:0} QPushButton:hover{background:#e2e8f0}")
+        self.grid_cols_down.clicked.connect(lambda: self._spin_col(-1))
+        cols_btn_layout.addWidget(self.grid_cols_up)
+        cols_btn_layout.addWidget(self.grid_cols_down)
+        grid_size_layout.addWidget(self.grid_cols_label, 0)
+        grid_size_layout.addLayout(cols_btn_layout)
+        self.new_grid_btn = QPushButton("新建网格")
+        self.new_grid_btn.setObjectName("soft_btn")
+        self.new_grid_btn.clicked.connect(self.on_new_grid)
+        grid_size_layout.addWidget(self.new_grid_btn, 1)
+        grid_control_layout.addLayout(grid_size_layout)
+
+        # ---- 交互模式切换 ----
+        mode_layout = QHBoxLayout()
+        mode_layout.setSpacing(8)
+
+        self.mode_sd_btn = QPushButton("起点/终点")
+        self.mode_sd_btn.setCheckable(True)
+        self.mode_sd_btn.setChecked(False)
+        self.mode_sd_btn.setObjectName("mode_sd_btn")
+        self.mode_sd_btn.clicked.connect(lambda: self.on_set_mode("sd"))
+        mode_layout.addWidget(self.mode_sd_btn, 1)
+
+        self.mode_obstacle_btn = QPushButton("障碍物")
+        self.mode_obstacle_btn.setCheckable(True)
+        self.mode_obstacle_btn.setObjectName("mode_obstacle_btn")
+        self.mode_obstacle_btn.clicked.connect(lambda: self.on_set_mode("obstacle"))
+        mode_layout.addWidget(self.mode_obstacle_btn, 1)
+
+        grid_control_layout.addLayout(mode_layout)
+
+        # ---- 清除按钮 ----
         clear_btns_layout = QHBoxLayout()
-        clear_btns_layout.setSpacing(10)
+        clear_btns_layout.setSpacing(8)
         self.clear_starts_btn = QPushButton("清除起点")
         self.clear_starts_btn.setObjectName("soft_btn")
         self.clear_starts_btn.clicked.connect(lambda: self.on_clear_state(ElectrodeGrid.STATE_START))
@@ -334,25 +540,48 @@ class DMFControllerWindow(QMainWindow):
 
         grid_control_layout.addLayout(clear_btns_layout)
 
+        self.reset_grid_btn = QPushButton("重置网格")
+        self.reset_grid_btn.setObjectName("soft_btn")
+        self.reset_grid_btn.clicked.connect(self.on_reset_grid)
+        grid_control_layout.addWidget(self.reset_grid_btn)
+
         grid_control_group.setLayout(grid_control_layout)
         left_panel.addWidget(grid_control_group)
 
         # 液滴设置组
         droplet_group = QGroupBox("液滴设置")
         droplet_layout = QVBoxLayout()
-        droplet_layout.setContentsMargins(16, 16, 16, 16)
-        droplet_layout.setSpacing(10)
+        droplet_layout.setContentsMargins(12, 12, 12, 12)
+        droplet_layout.setSpacing(6)
 
         droplet_selector_layout = QHBoxLayout()
         droplet_selector_layout.setSpacing(10)
         droplet_selector_layout.addWidget(QLabel("当前液滴："))
-        self.droplet_spinbox = QSpinBox()
-        self.droplet_spinbox.setRange(1, 8)
-        self.droplet_spinbox.setValue(1)
-        self.droplet_spinbox.valueChanged.connect(self.on_droplet_changed)
-        self.droplet_spinbox.setMinimumWidth(100)
-        droplet_selector_layout.addWidget(self.droplet_spinbox)
-        droplet_selector_layout.addStretch()
+        self.droplet_label = QLabel("1")
+        self.droplet_label.setAlignment(Qt.AlignCenter)
+        self.droplet_label.setFixedSize(50, 40)
+        self.droplet_label.setStyleSheet("""
+            background: white; border: 1px solid #e2e8f0;
+            border-radius: 8px; font-size: 18px; font-weight: 700; color: #0f172a;
+        """)
+        droplet_btn_layout = QVBoxLayout()
+        droplet_btn_layout.setSpacing(1)
+        self.droplet_up = QPushButton("▲")
+        self.droplet_up.setFixedSize(32, 19)
+        self.droplet_up.setStyleSheet("QPushButton{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:4px;font-size:10px;color:#475569;padding:0} QPushButton:hover{background:#e2e8f0}")
+        self.droplet_up.clicked.connect(lambda: self._spin_droplet(1))
+        self.droplet_down = QPushButton("▼")
+        self.droplet_down.setFixedSize(32, 19)
+        self.droplet_down.setStyleSheet("QPushButton{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:4px;font-size:10px;color:#475569;padding:0} QPushButton:hover{background:#e2e8f0}")
+        self.droplet_down.clicked.connect(lambda: self._spin_droplet(-1))
+        droplet_btn_layout.addWidget(self.droplet_up)
+        droplet_btn_layout.addWidget(self.droplet_down)
+        droplet_selector_layout.addWidget(self.droplet_label, 0)
+        droplet_selector_layout.addLayout(droplet_btn_layout)
+        self.next_droplet_btn = QPushButton("下一个液滴 →")
+        self.next_droplet_btn.setObjectName("soft_btn")
+        self.next_droplet_btn.clicked.connect(self.on_next_droplet)
+        droplet_selector_layout.addWidget(self.next_droplet_btn, 1)
         droplet_layout.addLayout(droplet_selector_layout)
 
         # 显示当前液滴的起点和终点
@@ -369,64 +598,49 @@ class DMFControllerWindow(QMainWindow):
         # 配对状态总览
         self.droplet_summary_label = QLabel("已配对：0 个液滴  总计配置：0 个")
         self.droplet_summary_label.setProperty("helper", True)
-        self.droplet_summary_label.setStyleSheet("color: #2e7d32; font-weight: 600; font-size: 15px;")
+        self.droplet_summary_label.setStyleSheet("color: #16a34a; font-weight: 600; font-size: 15px;")
         droplet_layout.addWidget(self.droplet_summary_label)
 
         droplet_group.setLayout(droplet_layout)
         left_panel.addWidget(droplet_group)
 
-        # 状态信息
-        info_group = QGroupBox("信息")
-        info_layout = QVBoxLayout()
-        info_layout.setContentsMargins(16, 16, 16, 16)
-        info_layout.setSpacing(12)
-
-        self.info_label = QLabel("就绪")
-        self.info_label.setWordWrap(True)
-        info_layout.addWidget(self.info_label)
-
-        self.path_info_label = QLabel("路径：无")
-        self.path_info_label.setProperty("helper", True)
-        self.path_info_label.setWordWrap(True)
-        info_layout.addWidget(self.path_info_label)
-
-        info_group.setLayout(info_layout)
-        left_panel.addWidget(info_group)
-
         # 串口测试组
         test_group = QGroupBox("串口测试")
         test_layout = QVBoxLayout()
-        test_layout.setContentsMargins(16, 16, 16, 16)
-        test_layout.setSpacing(10)
+        test_layout.setContentsMargins(12, 12, 12, 12)
+        test_layout.setSpacing(6)
 
         # ON/OFF 快捷指令
         cmd_layout1 = QHBoxLayout()
         cmd_layout1.setSpacing(8)
-        cmd_layout1.addWidget(QLabel("指令："))
+        cmd_label = QLabel("指令：")
+        cmd_label.setStyleSheet("font-weight: 600; font-size: 14px;")
+        cmd_layout1.addWidget(cmd_label)
         self.test_cmd_combo = QComboBox()
         self.test_cmd_combo.addItems(["ON", "OFF"])
-        self.test_cmd_combo.setMinimumWidth(70)
+        self.test_cmd_combo.setMinimumWidth(80)
         cmd_layout1.addWidget(self.test_cmd_combo)
+        relay_label = QLabel("通道：")
+        relay_label.setStyleSheet("font-weight: 600; font-size: 14px;")
+        cmd_layout1.addWidget(relay_label)
         self.test_relay_spin = QSpinBox()
         self.test_relay_spin.setRange(0, 47)
         self.test_relay_spin.setValue(0)
         self.test_relay_spin.setMinimumWidth(70)
         cmd_layout1.addWidget(self.test_relay_spin)
         self.test_send_btn = QPushButton("发送")
-        self.test_send_btn.setObjectName("soft_btn")
+        self.test_send_btn.setObjectName("accent_btn")
         self.test_send_btn.clicked.connect(self.on_test_send)
         cmd_layout1.addWidget(self.test_send_btn)
         test_layout.addLayout(cmd_layout1)
 
-        # 快速按钮
+        # 快速指令按钮
         quick_layout = QHBoxLayout()
-        quick_layout.setSpacing(6)
-        for label, cmd in [("ALLON", "ALLON"), ("ALLOFF", "ALLOFF"),
-                           ("TEST", "TEST"), ("LIST", "LIST"), ("HELP", "HELP")]:
+        quick_layout.setSpacing(8)
+        for label in ("ALLON", "ALLOFF", "TEST", "LIST", "HELP"):
             btn = QPushButton(label)
             btn.setObjectName("soft_btn")
-            btn.setFixedHeight(36)
-            btn.clicked.connect(lambda checked, c=cmd: self.on_test_quick(c))
+            btn.clicked.connect(lambda checked, c=label: self.on_test_quick(c))
             quick_layout.addWidget(btn)
         test_layout.addLayout(quick_layout)
 
@@ -434,9 +648,10 @@ class DMFControllerWindow(QMainWindow):
         custom_layout = QHBoxLayout()
         custom_layout.setSpacing(8)
         self.test_custom_input = QLineEdit()
-        self.test_custom_input.setPlaceholderText("自定义指令...")
+        self.test_custom_input.setPlaceholderText("输入自定义指令...")
+        # QLineEdit 样式已由全局 QSS 统一处理
         self.test_custom_btn = QPushButton("发送")
-        self.test_custom_btn.setObjectName("soft_btn")
+        self.test_custom_btn.setObjectName("accent_btn")
         self.test_custom_btn.clicked.connect(self.on_test_custom)
         custom_layout.addWidget(self.test_custom_input, 1)
         custom_layout.addWidget(self.test_custom_btn)
@@ -447,13 +662,13 @@ class DMFControllerWindow(QMainWindow):
         self.test_received_label.setWordWrap(True)
         self.test_received_label.setProperty("helper", True)
         self.test_received_label.setStyleSheet("""
-            background-color: #f0f0f0;
-            border: 1px solid #d0d0d0;
-            border-radius: 6px;
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
             padding: 8px;
-            font-size: 14px;
-            color: #222222;
-            min-height: 50px;
+            font-size: 13px;
+            color: #0f172a;
+            min-height: 36px;
         """)
         test_layout.addWidget(self.test_received_label)
 
@@ -464,29 +679,25 @@ class DMFControllerWindow(QMainWindow):
 
         # ============ 中间区域: 电极网格 + 右侧图例 ============
         center_widget = QWidget()
-        center_widget.setStyleSheet("background-color: transparent;")
+        center_widget.setObjectName("center_widget")
         center_layout = QHBoxLayout(center_widget)
         center_layout.setContentsMargins(0, 0, 0, 0)
         center_layout.setSpacing(16)
 
-        # 网格容器（加白色背景卡片效果）
+        # 网格容器（白色卡片效果）
         grid_card = QWidget()
-        grid_card.setStyleSheet("""
-            background-color: #ffffff;
-            border: 1px solid #d6d6d6;
-            border-radius: 12px;
-        """)
+        grid_card.setObjectName("grid_card")
         grid_card_layout = QVBoxLayout(grid_card)
         grid_card_layout.setContentsMargins(20, 20, 20, 20)
-        grid_card_layout.addWidget(self.grid_widget, 0, Qt.AlignCenter)
+        grid_card_layout.addWidget(self.grid_widget, 1)
 
         center_layout.addWidget(grid_card, stretch=1)
 
         # 右侧图例面板
         right_sidebar = QWidget()
+        right_sidebar.setObjectName("right_sidebar")
         right_sidebar.setFixedWidth(230)
         right_sidebar.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
-        right_sidebar.setStyleSheet("background-color: transparent;")
 
         right_panel = QVBoxLayout(right_sidebar)
         right_panel.setContentsMargins(0, 0, 0, 0)
@@ -511,15 +722,34 @@ class DMFControllerWindow(QMainWindow):
             row_layout.setAlignment(Qt.AlignVCenter)
             swatch = QWidget()
             swatch.setFixedSize(26, 26)
-            swatch.setStyleSheet(f"background-color: {color}; border: 1px solid #c7c7c7; border-radius: 4px;")
+            swatch.setStyleSheet(f"background-color: {color}; border: 1px solid #d0d5dd; border-radius: 4px;")
             label = QLabel(f"{name} = {text}")
-            label.setStyleSheet("font-size: 18px; color: #303030;")
+            label.setStyleSheet("font-size: 16px; color: #334155;")
             row_layout.addWidget(swatch)
             row_layout.addWidget(label, 1)
             legend_layout.addLayout(row_layout)
 
         legend_group.setLayout(legend_layout)
         right_panel.addWidget(legend_group)
+
+        # 信息面板（置于右栏图例下方）
+        right_info_group = QGroupBox("信息")
+        right_info_layout = QVBoxLayout()
+        right_info_layout.setContentsMargins(12, 12, 12, 12)
+        right_info_layout.setSpacing(6)
+
+        self.info_label = QLabel("就绪")
+        self.info_label.setWordWrap(True)
+        right_info_layout.addWidget(self.info_label)
+
+        self.path_info_label = QLabel("路径：无")
+        self.path_info_label.setProperty("helper", True)
+        self.path_info_label.setWordWrap(True)
+        right_info_layout.addWidget(self.path_info_label)
+
+        right_info_group.setLayout(right_info_layout)
+        right_panel.addWidget(right_info_group)
+
         right_panel.addStretch()
 
         center_layout.addWidget(right_sidebar, stretch=0)
@@ -535,14 +765,13 @@ class DMFControllerWindow(QMainWindow):
         self.statusBar().setStyleSheet("""
             QStatusBar {
                 background-color: #ffffff;
-                color: #333333;
-                border-top: 1px solid #d0d0d0;
-                padding: 2px 12px;
+                color: #475569;
+                border-top: 1px solid #e2e8f0;
+                padding: 2px 16px;
                 font-size: 14px;
             }
         """)
         self.statusBar().showMessage("就绪")
-        self.statusBar().setFont(QFont("Arial", 14))
 
         # ============ 初始化串口列表 ============
         self.refresh_serial_ports()
@@ -569,11 +798,11 @@ class DMFControllerWindow(QMainWindow):
             self.serial_thread.close_port()
             self.serial_connected = False
             self.serial_status_label.setText("状态：未连接")
-            self.serial_status_label.setStyleSheet("color: #d32f2f; font-weight: 600; font-size: 18px;")
+            self.serial_status_label.setStyleSheet("color: #dc2626; font-weight: 600; font-size: 16px;")
             self.header_status_label.setText("● 串口已断开")
             self.header_status_label.setStyleSheet("""
-                font-size: 15px; color: #ef9a9a; background: transparent;
-                padding: 4px 14px; border: 1px solid #ef9a9a; border-radius: 12px;
+                font-size: 14px; color: #fca5a5; background: rgba(239, 68, 68, 0.1);
+                padding: 4px 14px; border: 1px solid #fca5a5; border-radius: 12px;
             """)
             self.statusBar().showMessage("串口已断开连接")
 
@@ -583,11 +812,11 @@ class DMFControllerWindow(QMainWindow):
         if success:
             self.serial_connected = True
             self.serial_status_label.setText(f"状态：已连接 ({self.port_combo.currentText()})")
-            self.serial_status_label.setStyleSheet("color: #2e7d32; font-weight: 600; font-size: 18px;")
+            self.serial_status_label.setStyleSheet("color: #16a34a; font-weight: 600; font-size: 16px;")
             self.header_status_label.setText("● 串口已连接")
             self.header_status_label.setStyleSheet("""
-                font-size: 15px; color: #81c784; background: transparent;
-                padding: 4px 14px; border: 1px solid #81c784; border-radius: 12px;
+                font-size: 14px; color: #4ade80; background: rgba(74, 222, 128, 0.1);
+                padding: 4px 14px; border: 1px solid #4ade80; border-radius: 12px;
             """)
             self.statusBar().showMessage(f"串口已连接：{self.port_combo.currentText()}")
             self.port_combo.setEnabled(False)
@@ -595,11 +824,11 @@ class DMFControllerWindow(QMainWindow):
         else:
             self.serial_connected = False
             self.serial_status_label.setText("状态：连接失败")
-            self.serial_status_label.setStyleSheet("color: #e65100; font-weight: 600; font-size: 18px;")
+            self.serial_status_label.setStyleSheet("color: #ea580c; font-weight: 600; font-size: 16px;")
             self.header_status_label.setText("● 连接失败")
             self.header_status_label.setStyleSheet("""
-                font-size: 15px; color: #ffb74d; background: transparent;
-                padding: 4px 14px; border: 1px solid #ffb74d; border-radius: 12px;
+                font-size: 14px; color: #fb923c; background: rgba(234, 88, 12, 0.1);
+                padding: 4px 14px; border: 1px solid #fb923c; border-radius: 12px;
             """)
             self.statusBar().showMessage("串口连接失败")
             self.connect_btn.setChecked(False)
@@ -636,7 +865,7 @@ class DMFControllerWindow(QMainWindow):
 
     def update_droplet_info(self):
         """更新液滴信息显示。"""
-        did = self.droplet_spinbox.value()
+        did = int(self.droplet_label.text())
 
         # 更新当前液滴的起点/终点信息
         start = self.grid_widget.get_droplet_start(did)
@@ -651,6 +880,75 @@ class DMFControllerWindow(QMainWindow):
             f"已配对：{len(pairs)} 个液滴  总计配置：{len(active_ids)} 个")
 
     # ============ 路径规划 ============
+
+    def on_plan_path(self):
+        """规划路径：预先试跑，只计算和显示路径，不操作串口。"""
+        obstacles = set(self.grid_widget.get_obstacle_points())
+        droplet_pairs = self.grid_widget.get_droplet_pairs()
+
+        if not droplet_pairs:
+            QMessageBox.warning(self, "警告",
+                                "未找到已配对的液滴！\n\n"
+                                "请先为液滴分别设置起点和终点：\n"
+                                "1. 在「液滴设置」中选择液滴编号\n"
+                                "2. 点击网格设置起点（蓝色）和终点（橙色）")
+            return
+
+        pairs = [(start, target) for start, target, did in droplet_pairs]
+        droplet_ids = [did for start, target, did in droplet_pairs]
+
+        # 多液滴无干扰寻路
+        results = plan_multiple_paths(pairs, obstacles)
+
+        # 恢复正确的 droplet_id
+        for i, r in enumerate(results):
+            if i < len(droplet_ids):
+                r['droplet_id'] = droplet_ids[i]
+
+        # 统计结果
+        success_count = sum(1 for r in results if r['success'])
+        failed = [r for r in results if not r['success']]
+
+        # 在网格上绘制所有路径
+        self.grid_widget.set_paths(results)
+
+        # 显示路径信息
+        info_lines = [f"📋 规划结果: {success_count}/{len(results)} 成功"]
+        for r in results:
+            if r['success']:
+                info_lines.append(
+                    f"  ✅ 液滴{r['droplet_id']}: {r['start']}→{r['target']} ({len(r['path'])}步)")
+            else:
+                info_lines.append(
+                    f"  ❌ 液滴{r['droplet_id']}: {r['start']}→{r['target']} 无路径")
+        self.path_info_label.setText('\n'.join(info_lines))
+
+        if failed:
+            lines = ["以下液滴路径规划失败："]
+            for r in failed:
+                reason = r.get('fail_reason', '未知原因')
+                lines.append(f"  • 液滴{r['droplet_id']}: {r['start']}→{r['target']}  —  {reason}")
+            lines.append("")
+            reason_counts = Counter(r.get('fail_reason', '未知') for r in failed)
+            lines.append("建议：")
+            for reason, count in reason_counts.items():
+                if "障碍物" in reason:
+                    lines.append(f"  · {count}个液滴{reason}，请调整障碍物位置")
+                elif "占用" in reason:
+                    lines.append(f"  · {count}个液滴路径被占用，请调整起点/终点顺序或位置")
+                elif "等于" in reason:
+                    lines.append(f"  · {count}个液滴{reason}，请设置不同的起点和终点")
+                else:
+                    lines.append(f"  · {count}个液滴{reason}，请检查起点/终点是否可行")
+            QMessageBox.critical(self, "规划失败", '\n'.join(lines))
+
+        if success_count == 0:
+            self.grid_widget.clear_paths()
+            self.path_info_label.setText("路径：规划失败")
+            return
+
+        self.statusBar().showMessage(f"规划完成: {success_count}/{len(results)} 条路径")
+        self.info_label.setText(f"规划完成 ✓  {success_count}/{len(results)} 条路径成功")
 
     def on_run_path(self):
         """手动配对液滴路径规划并依次执行。"""
@@ -700,14 +998,23 @@ class DMFControllerWindow(QMainWindow):
         self.path_info_label.setText('\n'.join(info_lines))
 
         if failed:
-            fail_info = ', '.join(f"液滴{r['droplet_id']}" for r in failed)
-            QMessageBox.critical(self, "路径规划失败",
-                                 f"以下液滴无法找到无干扰路径：\n{fail_info}\n\n"
-                                 f"可能原因：\n"
-                                 f"- 起点被障碍物或其他路径阻挡\n"
-                                 f"- 目标不可达\n"
-                                 f"- 所有可行路径被其他液滴占用\n\n"
-                                 f"请调整起点/目标/障碍物后重试。")
+            lines = ["以下液滴路径规划失败："]
+            for r in failed:
+                reason = r.get('fail_reason', '未知原因')
+                lines.append(f"  • 液滴{r['droplet_id']}: {r['start']}→{r['target']}  —  {reason}")
+            lines.append("")
+            reason_counts = Counter(r.get('fail_reason', '未知') for r in failed)
+            lines.append("建议：")
+            for reason, count in reason_counts.items():
+                if "障碍物" in reason:
+                    lines.append(f"  · {count}个液滴{reason}，请调整障碍物位置")
+                elif "占用" in reason:
+                    lines.append(f"  · {count}个液滴路径被占用，请调整起点/终点顺序或位置")
+                elif "等于" in reason:
+                    lines.append(f"  · {count}个液滴{reason}，请设置不同的起点和终点")
+                else:
+                    lines.append(f"  · {count}个液滴{reason}，请检查起点/终点是否可行")
+            QMessageBox.critical(self, "规划失败", '\n'.join(lines))
 
         if success_count == 0:
             self.grid_widget.clear_paths()
@@ -799,8 +1106,8 @@ class DMFControllerWindow(QMainWindow):
         self.info_label.setText("所有液滴已完成")
         self.header_status_label.setText("● 全部完成")
         self.header_status_label.setStyleSheet("""
-            font-size: 15px; color: #81c784; background: transparent;
-            padding: 4px 14px; border: 1px solid #81c784; border-radius: 12px;
+            font-size: 14px; color: #4ade80; background: rgba(74, 222, 128, 0.1);
+            padding: 4px 14px; border: 1px solid #4ade80; border-radius: 12px;
         """)
 
     def on_stop(self):
@@ -816,8 +1123,8 @@ class DMFControllerWindow(QMainWindow):
         self.info_label.setText("已停止")
         self.header_status_label.setText("● 已停止")
         self.header_status_label.setStyleSheet("""
-            font-size: 15px; color: #ef9a9a; background: transparent;
-            padding: 4px 14px; border: 1px solid #ef9a9a; border-radius: 12px;
+            font-size: 14px; color: #fca5a5; background: rgba(239, 68, 68, 0.1);
+            padding: 4px 14px; border: 1px solid #fca5a5; border-radius: 12px;
         """)
 
     def move_droplet_step(self):
@@ -863,6 +1170,55 @@ class DMFControllerWindow(QMainWindow):
             f"液滴{droplet_id} 移动到 ({current_pos[0]}, {current_pos[1]})，索引：{current_index}")
 
         self.current_droplet_index += 1
+
+    def on_set_mode(self, mode):
+        """切换交互模式。"""
+        self.grid_widget.set_mode(mode)
+
+    def on_next_droplet(self):
+        """切换到下一个液滴编号。"""
+        val = int(self.droplet_label.text()) % 8 + 1
+        self.droplet_label.setText(str(val))
+        self.grid_widget.set_droplet_id(val)
+        self.update_droplet_info()
+        self.statusBar().showMessage(f"已切换到液滴 {val}")
+
+    def _spin_droplet(self, delta):
+        val = int(self.droplet_label.text()) + delta
+        val = max(1, min(8, val))
+        self.droplet_label.setText(str(val))
+        self.grid_widget.set_droplet_id(val)
+        self.update_droplet_info()
+
+    def _spin_row(self, delta):
+        val = int(self.grid_rows_label.text()) + delta
+        val = max(2, min(16, val))
+        self.grid_rows_label.setText(str(val))
+
+    def _spin_col(self, delta):
+        val = int(self.grid_cols_label.text()) + delta
+        val = max(2, min(16, val))
+        self.grid_cols_label.setText(str(val))
+
+    def on_mode_changed(self, mode):
+        """交互模式变化时更新按钮状态。"""
+        if mode == "sd":
+            self.mode_sd_btn.setChecked(True)
+            self.mode_obstacle_btn.setChecked(False)
+        elif mode == "obstacle":
+            self.mode_sd_btn.setChecked(False)
+            self.mode_obstacle_btn.setChecked(True)
+        self.statusBar().showMessage(f"已切换到{'起点/终点' if mode == 'sd' else '障碍物'}模式")
+
+    def on_new_grid(self):
+        """根据行/列值重建网格。"""
+        rows = int(self.grid_rows_label.text())
+        cols = int(self.grid_cols_label.text())
+        self.grid_widget.rebuild_grid(rows, cols)
+        self.droplet_plans = []
+        self.path_info_label.setText("路径：无")
+        self.update_droplet_info()
+        self.statusBar().showMessage(f"已新建 {rows}×{cols} 网格")
 
     def on_reset_grid(self):
         """重置网格所有单元格为 Idle，同时清除路径显示。"""

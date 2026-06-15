@@ -1322,7 +1322,7 @@ def main():
     ]
 
     # 执行加载动画
-    splash_mgr.run_loading_sequence(loading_tasks, min_duration=3.0)
+    splash_mgr.run_loading_sequence(loading_tasks, min_duration=2.0)
 
     # 创建主窗口
     window = DMFControllerWindow()

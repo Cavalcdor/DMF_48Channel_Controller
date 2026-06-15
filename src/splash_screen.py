@@ -306,12 +306,12 @@ class SplashManager:
         elapsed = _time.time() - _start
         remaining = min_duration - elapsed
         if remaining > 0:
-            # 用进度条动画填充剩余时间
+            # 用进度条动画填充剩余时间（保持上一个消息，不提前显示"加载完成"）
             steps = int(remaining / 0.05)
-            for i in range(1, steps + 1):
-                fill = 99 + int(i * 1 / steps)  # 99→100 平滑过渡
-                msg = "加载完成" if i < steps else "加载完成，正在启动..."
-                self.splash.set_progress(min(100, fill), msg)
+            last_msg = tasks[-1][1] if tasks else "正在加载..."
+            for i in range(steps):
+                fill = 99 + int((i + 1) * 1 / steps)
+                self.splash.set_progress(min(100, fill), last_msg)
                 QApplication.processEvents()
                 _time.sleep(0.05)
 

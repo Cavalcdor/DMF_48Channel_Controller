@@ -20,9 +20,9 @@ import math
 class DMFSplashScreen(QWidget):
     """DMF 48通道控制器 欢迎启动界面（基于 QWidget，完全控制尺寸）。"""
 
-    # 固定尺寸常量
-    SPLASH_W = 800
-    SPLASH_H = 540
+    # 固定尺寸常量 — 拉大上下空间
+    SPLASH_W = 960
+    SPLASH_H = 640
 
     # 加载进度信号
     progress_updated = pyqtSignal(int, str)
@@ -98,9 +98,9 @@ class DMFSplashScreen(QWidget):
         painter.fillRect(0, 0, W, H, bg_gradient)
 
         # 顶部脉冲光晕
-        glow_radius = 400 + int(self._pulse_phase * 0.6)
+        glow_radius = 480 + int(self._pulse_phase * 0.6)
         glow_alpha = 35 + int(self._pulse_phase * 0.2)
-        glow = QRadialGradient(W // 2, 100, glow_radius)
+        glow = QRadialGradient(W // 2, 120, glow_radius)
         glow.setColorAt(0.0, QColor(59, 130, 246, glow_alpha))
         glow.setColorAt(0.5, QColor(59, 130, 246, int(glow_alpha * 0.35)))
         glow.setColorAt(1.0, QColor(59, 130, 246, 0))
@@ -110,25 +110,25 @@ class DMFSplashScreen(QWidget):
         pen = QPen(QColor("#3b82f6"))
         pen.setWidth(3)
         painter.setPen(pen)
-        painter.drawLine(50, 2, W - 50, 2)
+        painter.drawLine(60, 2, W - 60, 2)
 
         pen2 = QPen(QColor("#3b82f6"))
         pen2.setWidth(1)
         pen2.setStyle(Qt.DotLine)
         painter.setPen(pen2)
-        painter.drawLine(50, 6, W - 50, 6)
+        painter.drawLine(60, 6, W - 60, 6)
 
         # ========== 科技感装饰网格 ==========
         painter.setPen(QPen(QColor(59, 130, 246, 20), 1))
-        for x in range(0, W, 50):
+        for x in range(0, W, 60):
             painter.drawLine(x, 0, x, H)
-        for y in range(0, H, 50):
+        for y in range(0, H, 60):
             painter.drawLine(0, y, W, y)
 
         # ========== 浮动粒子 ==========
-        for i in range(16):
-            px = 50 + (i * 53 + self._particle_offset * 2) % (W - 100)
-            py = 50 + (i * 37 + self._particle_offset * 3) % (H - 100)
+        for i in range(20):
+            px = 60 + (i * 53 + self._particle_offset * 2) % (W - 120)
+            py = 60 + (i * 37 + self._particle_offset * 3) % (H - 120)
             size = 2 + math.sin(self._pulse_phase * 0.1 + i) * 2
             p_alpha = int(60 + 30 * math.sin(self._pulse_phase * 0.08 + i * 0.7))
             p_alpha = max(10, min(100, p_alpha))
@@ -136,11 +136,11 @@ class DMFSplashScreen(QWidget):
             painter.setBrush(QColor(147, 197, 253, p_alpha))
             painter.drawEllipse(int(px - size/2), int(py - size/2), int(size), int(size))
 
-        # ========== Logo 区域 ==========
-        cx, cy = W // 2, 130
+        # ========== Logo 区域 (下移，留足顶空) ==========
+        cx, cy = W // 2, 160
 
         # 脉冲发光外圈
-        pulse_r = 72 + int(5 * math.sin(self._pulse_phase * 0.06))
+        pulse_r = 80 + int(5 * math.sin(self._pulse_phase * 0.06))
         glow_circle = QRadialGradient(cx, cy, pulse_r)
         glow_circle.setColorAt(0.0, QColor(59, 130, 246, 55))
         glow_circle.setColorAt(0.6, QColor(59, 130, 246, 18))
@@ -150,77 +150,74 @@ class DMFSplashScreen(QWidget):
         painter.drawEllipse(int(cx - pulse_r), int(cy - pulse_r),
                             int(pulse_r * 2), int(pulse_r * 2))
 
-        # 外圈 (r=50)
+        # 外圈 (r=52)
         painter.setPen(QPen(QColor("#3b82f6"), 2))
         painter.setBrush(QColor("#0b1120"))
-        painter.drawEllipse(cx - 50, cy - 50, 100, 100)
+        painter.drawEllipse(cx - 52, cy - 52, 104, 104)
 
-        # 内圈 (r=32)
-        inner_grad = QRadialGradient(cx, cy, 28)
+        # 内圈 (r=34)
+        inner_grad = QRadialGradient(cx, cy, 30)
         inner_grad.setColorAt(0.0, QColor("#60a5fa"))
         inner_grad.setColorAt(0.7, QColor("#3b82f6"))
         inner_grad.setColorAt(1.0, QColor("#2563eb"))
         painter.setBrush(QBrush(inner_grad))
         painter.setPen(QPen(QColor("#93c5fd"), 1))
-        painter.drawEllipse(cx - 32, cy - 32, 64, 64)
+        painter.drawEllipse(cx - 34, cy - 34, 68, 68)
 
         # "DMF" 文字
-        font_logo = QFont("Segoe UI", 18, QFont.Bold)
+        font_logo = QFont("Segoe UI", 20, QFont.Bold)
         painter.setFont(font_logo)
         painter.setPen(QColor("#ffffff"))
-        painter.drawText(QRect(cx - 32, cy - 32, 64, 64),
+        painter.drawText(QRect(cx - 34, cy - 34, 68, 68),
                          Qt.AlignCenter, "DMF")
 
-        # ========== 标题 ==========
-        font_title = QFont("Microsoft YaHei", 36, QFont.Bold)
+        # ========== 标题 (大幅下移 + 增高文字框) ==========
+        font_title = QFont("Microsoft YaHei", 38, QFont.Bold)
         painter.setFont(font_title)
-        # 轻微文字阴影
+        # 阴影
         painter.setPen(QColor(15, 17, 32, 120))
-        painter.drawText(QRect(3, 218, W, 56), Qt.AlignCenter, "DMF 48通道控制器")
+        painter.drawText(QRect(3, 260, W, 60), Qt.AlignCenter, "DMF 48通道控制器")
         painter.setPen(QColor("#f1f5f9"))
-        painter.drawText(QRect(0, 215, W, 56), Qt.AlignCenter, "DMF 48通道控制器")
+        painter.drawText(QRect(0, 257, W, 60), Qt.AlignCenter, "DMF 48通道控制器")
 
         # ========== 副标题 ==========
-        font_sub = QFont("Microsoft YaHei", 14)
-        font_sub.setLetterSpacing(QFont.AbsoluteSpacing, 4)
+        font_sub = QFont("Microsoft YaHei", 15)
+        font_sub.setLetterSpacing(QFont.AbsoluteSpacing, 5)
         painter.setFont(font_sub)
         painter.setPen(QColor("#94a3b8"))
-        painter.drawText(QRect(0, 270, W, 30), Qt.AlignCenter,
+        painter.drawText(QRect(0, 322, W, 32), Qt.AlignCenter,
                          "数字微流控液滴控制系统")
 
         # ========== 分隔线 ==========
         painter.setPen(QPen(QColor(51, 65, 85, 180), 1))
-        painter.drawLine(W // 2 - 160, 315, W // 2 + 160, 315)
+        painter.drawLine(W // 2 - 180, 370, W // 2 + 180, 370)
 
-        # ========== 版本标签 (胶囊样式) ==========
+        # ========== 版本标签 ==========
         v_label = f"  v{VERSION}  "
-        font_ver = QFont("Segoe UI", 13, QFont.Bold)
+        font_ver = QFont("Segoe UI", 14, QFont.Bold)
         fm = painter.fontMetrics()
-        v_w = fm.horizontalAdvance(v_label) + 24
-        v_x, v_y = (W - v_w) // 2, 330
-        # 胶囊背景
+        v_w = fm.horizontalAdvance(v_label) + 28
+        v_x, v_y = (W - v_w) // 2, 388
         painter.setPen(Qt.NoPen)
         painter.setBrush(QColor(59, 130, 246, 40))
-        painter.drawRoundedRect(v_x, v_y, v_w, 28, 14, 14)
-        # 胶囊边框
+        painter.drawRoundedRect(v_x, v_y, v_w, 30, 15, 15)
         painter.setBrush(Qt.NoBrush)
         painter.setPen(QPen(QColor(59, 130, 246, 100), 1))
-        painter.drawRoundedRect(v_x, v_y, v_w, 28, 14, 14)
-        # 版本文字
+        painter.drawRoundedRect(v_x, v_y, v_w, 30, 15, 15)
         painter.setFont(font_ver)
         painter.setPen(QColor("#93c5fd"))
-        painter.drawText(QRect(v_x, v_y, v_w, 28), Qt.AlignCenter, v_label)
+        painter.drawText(QRect(v_x, v_y, v_w, 30), Qt.AlignCenter, v_label)
 
         # ========== 作者 & 年份 ==========
-        font_cr = QFont("Microsoft YaHei", 11)
+        font_cr = QFont("Microsoft YaHei", 12)
         painter.setFont(font_cr)
         painter.setPen(QColor("#64748b"))
-        painter.drawText(QRect(0, 375, W, 24), Qt.AlignCenter,
+        painter.drawText(QRect(0, 440, W, 26), Qt.AlignCenter,
                          f"© {YEAR} {AUTHOR}  ·  MIT License")
 
         # ========== 进度条 ==========
-        bar_w, bar_h = 420, 6
-        bar_x, bar_y = (W - bar_w) // 2, 435
+        bar_w, bar_h = 460, 6
+        bar_x, bar_y = (W - bar_w) // 2, 510
         painter.setPen(Qt.NoPen)
         painter.setBrush(QColor(51, 65, 85, 150))
         painter.drawRoundedRect(bar_x, bar_y, bar_w, bar_h, 3, 3)
@@ -242,17 +239,17 @@ class DMFSplashScreen(QWidget):
                 painter.drawLine(bar_x, bar_y + 3, bar_x + fill_w, bar_y + 3)
 
         # ========== 加载信息 ==========
-        font_msg = QFont("Microsoft YaHei", 12)
+        font_msg = QFont("Microsoft YaHei", 13)
         painter.setFont(font_msg)
         painter.setPen(QColor("#94a3b8"))
-        painter.drawText(QRect(0, 460, W, 26), Qt.AlignCenter, message)
+        painter.drawText(QRect(0, 538, W, 28), Qt.AlignCenter, message)
 
         # ========== 底部装饰线 ==========
         pen3 = QPen(QColor("#3b82f6"))
         pen3.setWidth(1)
         pen3.setStyle(Qt.DotLine)
         painter.setPen(pen3)
-        painter.drawLine(50, H - 4, W - 50, H - 4)
+        painter.drawLine(60, H - 6, W - 60, H - 6)
 
         painter.end()
 

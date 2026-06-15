@@ -174,39 +174,39 @@ class DMFSplashScreen(QWidget):
         painter.drawEllipse(cx - 26, cy - 26, 52, 52)
 
         # "DMF" 文字
-        font_logo = QFont("Segoe UI", 15, QFont.Bold)
+        font_logo = QFont("Segoe UI", 13, QFont.Bold)
         painter.setFont(font_logo)
         painter.setPen(QColor("#ffffff"))
         painter.drawText(QRect(cx - 26, cy - 26, 52, 52),
                          Qt.AlignCenter, "DMF")
 
         # ========== 标题 ==========
-        font_title = QFont("Microsoft YaHei", 28, QFont.Bold)
+        font_title = QFont("Microsoft YaHei", 24, QFont.Bold)
         painter.setFont(font_title)
         # 阴影
         painter.setPen(QColor(15, 17, 32, 120))
-        painter.drawText(QRect(2, 175, W, 44), Qt.AlignCenter, "DMF 48通道控制器")
+        painter.drawText(QRect(2, 165, W, 40), Qt.AlignCenter, "DMF 48通道控制器")
         painter.setPen(QColor("#f1f5f9"))
-        painter.drawText(QRect(0, 173, W, 44), Qt.AlignCenter, "DMF 48通道控制器")
+        painter.drawText(QRect(0, 163, W, 40), Qt.AlignCenter, "DMF 48通道控制器")
 
         # ========== 副标题 ==========
-        font_sub = QFont("Microsoft YaHei", 12)
-        font_sub.setLetterSpacing(QFont.AbsoluteSpacing, 3)
+        font_sub = QFont("Microsoft YaHei", 10)
+        font_sub.setLetterSpacing(QFont.AbsoluteSpacing, 2)
         painter.setFont(font_sub)
         painter.setPen(QColor("#94a3b8"))
-        painter.drawText(QRect(0, 218, W, 26), Qt.AlignCenter,
+        painter.drawText(QRect(0, 205, W, 22), Qt.AlignCenter,
                          "数字微流控液滴控制系统")
 
         # ========== 分隔线 ==========
         painter.setPen(QPen(QColor(51, 65, 85, 180), 1))
-        painter.drawLine(W // 2 - 130, 250, W // 2 + 130, 250)
+        painter.drawLine(W // 2 - 130, 228, W // 2 + 130, 228)
 
         # ========== 版本标签 ==========
         v_label = f"  v{VERSION}  "
-        font_ver = QFont("Segoe UI", 11, QFont.Bold)
+        font_ver = QFont("Segoe UI", 10, QFont.Bold)
         fm = painter.fontMetrics()
-        v_w = fm.horizontalAdvance(v_label) + 20
-        v_x, v_y = (W - v_w) // 2, 264
+        v_w = fm.horizontalAdvance(v_label) + 18
+        v_x, v_y = (W - v_w) // 2, 240
         painter.setPen(Qt.NoPen)
         painter.setBrush(QColor(59, 130, 246, 40))
         painter.drawRoundedRect(v_x, v_y, v_w, 24, 12, 12)
@@ -218,15 +218,15 @@ class DMFSplashScreen(QWidget):
         painter.drawText(QRect(v_x, v_y, v_w, 24), Qt.AlignCenter, v_label)
 
         # ========== 作者 & 年份 ==========
-        font_cr = QFont("Microsoft YaHei", 10)
+        font_cr = QFont("Microsoft YaHei", 9)
         painter.setFont(font_cr)
         painter.setPen(QColor("#64748b"))
-        painter.drawText(QRect(0, 300, W, 22), Qt.AlignCenter,
+        painter.drawText(QRect(0, 278, W, 20), Qt.AlignCenter,
                          f"© {YEAR} {AUTHOR}  ·  MIT License")
 
         # ========== 进度条 ==========
-        bar_w, bar_h = 340, 5
-        bar_x, bar_y = (W - bar_w) // 2, 345
+        bar_w, bar_h = 340, 4
+        bar_x, bar_y = (W - bar_w) // 2, 300
         painter.setPen(Qt.NoPen)
         painter.setBrush(QColor(51, 65, 85, 150))
         painter.drawRoundedRect(bar_x, bar_y, bar_w, bar_h, 3, 3)
@@ -248,10 +248,10 @@ class DMFSplashScreen(QWidget):
                 painter.drawLine(bar_x, bar_y + 3, bar_x + fill_w, bar_y + 3)
 
         # ========== 加载信息 ==========
-        font_msg = QFont("Microsoft YaHei", 10)
+        font_msg = QFont("Microsoft YaHei", 9)
         painter.setFont(font_msg)
         painter.setPen(QColor("#94a3b8"))
-        painter.drawText(QRect(0, 362, W, 22), Qt.AlignCenter, message)
+        painter.drawText(QRect(0, 315, W, 20), Qt.AlignCenter, message)
 
         # ========== 底部装饰线 ==========
         pen3 = QPen(QColor("#3b82f6"))
@@ -302,7 +302,7 @@ class SplashManager:
         """关闭启动画面。"""
         self.splash.close()
 
-    def run_loading_sequence(self, tasks: list, min_duration: float = 3.0):
+    def run_loading_sequence(self, tasks: list, min_duration: float = 2.0):
         """执行加载任务序列，确保启动画面至少停留 min_duration 秒。
 
         Args:
@@ -310,7 +310,7 @@ class SplashManager:
                    weight: 该任务占总进度的比重
                    message: 显示的文字
                    callback: 执行的任务函数
-            min_duration: 最短停留时间（秒），默认 3.0
+            min_duration: 最短停留时间（秒），默认 2 秒
         """
         import time as _time
         _start = _time.time()

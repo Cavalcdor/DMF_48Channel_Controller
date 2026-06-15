@@ -25,7 +25,7 @@ class SettingsWidget(QWidget):
         layout.setSpacing(16)
 
         # ── 页面标题 ──
-        title = QLabel("⚙️ 设置")
+        title = QLabel("设置")
         title.setStyleSheet("font-size: 22px; font-weight: 700; color: #0f172a;")
         layout.addWidget(title)
 
@@ -37,7 +37,7 @@ class SettingsWidget(QWidget):
         layout.addSpacing(8)
 
         # ── 串口设置 ──
-        serial_group = QGroupBox("🔌 串口通信")
+        serial_group = QGroupBox("串口通信")
         serial_group.setStyleSheet("""
             QGroupBox {
                 font-size: 15px; font-weight: 600; color: #0f172a;
@@ -67,7 +67,7 @@ class SettingsWidget(QWidget):
         layout.addWidget(serial_group)
 
         # ── 路径控制 ──
-        path_group = QGroupBox("🗺️ 路径控制")
+        path_group = QGroupBox("路径控制")
         path_group.setStyleSheet(serial_group.styleSheet())
         pf = QFormLayout(path_group)
         pf.setSpacing(12)
@@ -84,7 +84,7 @@ class SettingsWidget(QWidget):
         layout.addWidget(path_group)
 
         # ── 网格默认值 ──
-        grid_group = QGroupBox("📐 网格默认值")
+        grid_group = QGroupBox("网格默认值")
         grid_group.setStyleSheet(serial_group.styleSheet())
         gf = QFormLayout(grid_group)
         gf.setSpacing(12)
@@ -122,7 +122,7 @@ class SettingsWidget(QWidget):
         reset_btn.clicked.connect(self._reset_defaults)
         btn_layout.addWidget(reset_btn)
 
-        save_btn = QPushButton("💾 保存设置")
+        save_btn = QPushButton("保存设置")
         save_btn.setObjectName("accent_btn")
         save_btn.setFixedSize(150, 42)
         save_btn.clicked.connect(self._save_settings)

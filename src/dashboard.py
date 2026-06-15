@@ -71,10 +71,10 @@ class DashboardWidget(QWidget):
         cards_layout = QHBoxLayout()
         cards_layout.setSpacing(20)
 
-        self.card_serial = self._make_card("🔌 串口状态", "未连接", "#ef4444")
-        self.card_grid = self._make_card("📐 网格尺寸", "6 × 8", "#3b82f6")
-        self.card_droplet = self._make_card("💧 液滴配置", "0 / 8", "#8b5cf6")
-        self.card_path = self._make_card("🗺️ 路径规划", "无", "#f59e0b")
+        self.card_serial = self._make_card("串口状态", "未连接", "#ef4444")
+        self.card_grid = self._make_card("网格尺寸", "6 × 8", "#3b82f6")
+        self.card_droplet = self._make_card("液滴配置", "0 / 8", "#8b5cf6")
+        self.card_path = self._make_card("路径规划", "无", "#f59e0b")
 
         cards_layout.addWidget(self.card_serial)
         cards_layout.addWidget(self.card_grid)
@@ -90,7 +90,7 @@ class DashboardWidget(QWidget):
         layout.addWidget(sep)
 
         # ===== 快速操作 =====
-        action_title = QLabel("⚡ 快速操作")
+        action_title = QLabel("快速操作")
         action_title.setStyleSheet("font-size: 17px; font-weight: 700; color: #0f172a;")
         layout.addWidget(action_title)
 
@@ -98,11 +98,11 @@ class DashboardWidget(QWidget):
         actions_layout.setSpacing(12)
 
         actions = [
-            ("📄 新工程", self.signal_new_project, "#3b82f6"),
-            ("📂 打开工程", self.signal_open_project, "#8b5cf6"),
-            ("💾 保存工程", self.signal_save_project, "#059669"),
-            ("🗺️ 规划路径", self.signal_plan_path, "#f59e0b"),
-            ("▶️ 运行路径", self.signal_run_path, "#10b981"),
+            ("新工程", self.signal_new_project, "#3b82f6"),
+            ("打开工程", self.signal_open_project, "#8b5cf6"),
+            ("保存工程", self.signal_save_project, "#059669"),
+            ("规划路径", self.signal_plan_path, "#f59e0b"),
+            ("运行路径", self.signal_run_path, "#10b981"),
         ]
         for text, sig, color in actions:
             btn = QPushButton(text)
@@ -140,7 +140,7 @@ class DashboardWidget(QWidget):
         layout.addWidget(sep2)
 
         # ===== 最近工程 =====
-        recent_title = QLabel("📂 最近工程")
+        recent_title = QLabel("最近工程")
         recent_title.setStyleSheet("font-size: 17px; font-weight: 700; color: #0f172a;")
         layout.addWidget(recent_title)
 
@@ -257,6 +257,6 @@ class DashboardWidget(QWidget):
             dname = os.path.dirname(fp)
             if len(dname) > 40:
                 dname = "..." + dname[-37:]
-            item = QListWidgetItem(f"📄  {name}    —  {dname}")
+            item = QListWidgetItem(f"{name}    —  {dname}")
             item.setData(Qt.UserRole, fp)
             self.recent_list.addItem(item)

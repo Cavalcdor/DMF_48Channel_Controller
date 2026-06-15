@@ -35,22 +35,22 @@ class LogPanel(QWidget):
         toolbar = QHBoxLayout()
         toolbar.setSpacing(12)
 
-        title = QLabel("📋 运行日志")
-        title.setStyleSheet("font-size: 20px; font-weight: 700; color: #0f172a;")
+        title = QLabel("运行日志")
+        title.setStyleSheet("font-weight: 700; color: #0f172a;")
         toolbar.addWidget(title)
 
         toolbar.addStretch()
 
         self.log_count_label = QLabel("0 条记录")
-        self.log_count_label.setStyleSheet("font-size: 13px; color: #94a3b8;")
+        self.log_count_label.setStyleSheet("color: #94a3b8;")
         toolbar.addWidget(self.log_count_label)
 
-        clear_btn = QPushButton("🗑 清空")
-        clear_btn.setFixedSize(100, 34)
+        clear_btn = QPushButton("清空")
+        clear_btn.setFixedSize(100, 36)
         clear_btn.setStyleSheet("""
             QPushButton {
                 background: #ffffff; border: 1px solid #e2e8f0;
-                border-radius: 6px; font-size: 13px; font-weight: 600;
+                border-radius: 6px; font-weight: 600;
                 color: #64748b;
             }
             QPushButton:hover { background: #f1f5f9; border-color: #94a3b8; }
@@ -69,9 +69,8 @@ class LogPanel(QWidget):
                 color: #e2e8f0;
                 border: 1px solid #1e293b;
                 border-radius: 10px;
-                padding: 14px;
+                padding: 10px;
                 font-family: "Consolas", "Courier New", "Microsoft YaHei", monospace;
-                font-size: 14px;
                 selection-background-color: #3b82f6;
                 selection-color: #ffffff;
             }

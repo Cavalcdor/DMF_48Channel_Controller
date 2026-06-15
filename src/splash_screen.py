@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import QWidget, QApplication
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QRect, QSize
 from PyQt5.QtGui import (
     QPixmap, QPainter, QColor, QFont, QLinearGradient,
-    QPen, QRadialGradient, QBrush, QPainterPath
+    QPen, QRadialGradient, QBrush
 )
 import math
 
@@ -99,19 +99,12 @@ class DMFSplashScreen(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setRenderHint(QPainter.TextAntialiasing)
 
-        # ========== 背景（先用圆角路径填充深色，使 AA 边缘与深色融合不泛白）==========
-        bg_path = QPainterPath()
-        bg_path.addRoundedRect(0, 0, W, H, 20, 20)
+        # ========== 背景（直角，无圆角白边）==========
         bg_gradient = QLinearGradient(0, 0, 0, H)
         bg_gradient.setColorAt(0.0, QColor("#0b1120"))
         bg_gradient.setColorAt(0.5, QColor("#162240"))
         bg_gradient.setColorAt(1.0, QColor("#0d1829"))
-        painter.setBrush(QBrush(bg_gradient))
-        painter.setPen(Qt.NoPen)
-        painter.drawPath(bg_path)
-
-        # 之后的内容用裁剪路径防止溢出圆角
-        painter.setClipPath(bg_path)
+        painter.fillRect(0, 0, W, H, bg_gradient)
 
         # 顶部脉冲光晕
         glow_radius = 320 + int(self._pulse_phase * 0.5)

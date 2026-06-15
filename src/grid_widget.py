@@ -514,3 +514,28 @@ class ElectrodeGrid(QWidget):
                     self.grid[row][col] = self.STATE_IDLE
         self.droplet_config_changed.emit()
         self.update()
+
+    def clear_droplet(self, droplet_id):
+        """清除指定液滴的起点和终点，保留障碍物和其他液滴。"""
+        self.display_paths = []
+        if droplet_id in self.droplet_starts:
+            r, c = self.droplet_starts.pop(droplet_id)
+            self.grid[r][c] = self.STATE_IDLE
+        if droplet_id in self.droplet_targets:
+            r, c = self.droplet_targets.pop(droplet_id)
+            self.grid[r][c] = self.STATE_IDLE
+        self.droplet_config_changed.emit()
+        self.update()
+
+    def clear_all_droplets(self):
+        """清除所有液滴的起点/终点配置，同时清除路径显示。"""
+        self.display_paths = []
+        # 清除所有起点和终点的格子
+        for did, (r, c) in list(self.droplet_starts.items()):
+            self.grid[r][c] = self.STATE_IDLE
+        for did, (r, c) in list(self.droplet_targets.items()):
+            self.grid[r][c] = self.STATE_IDLE
+        self.droplet_starts.clear()
+        self.droplet_targets.clear()
+        self.droplet_config_changed.emit()
+        self.update()

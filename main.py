@@ -252,28 +252,6 @@ class DMFControllerWindow(QMainWindow):
         }
 
         /* ========== 输入控件 ========== */
-        QComboBox {
-            border: 1px solid #e2e8f0;
-            border-radius: 8px;
-            padding: 8px 12px;
-            background-color: #ffffff;
-            color: #0f172a;
-            font-size: 15px;
-        }
-        QComboBox:focus {
-            border-color: #93c5fd;
-        }
-        QComboBox::drop-down {
-            border: none;
-            width: 28px;
-        }
-        QComboBox::down-arrow {
-            image: none;
-            border-left: 5px solid transparent;
-            border-right: 5px solid transparent;
-            border-top: 6px solid #64748b;
-            margin-right: 4px;
-        }
 
         QLineEdit {
             border: 1px solid #e2e8f0;
@@ -523,27 +501,16 @@ class DMFControllerWindow(QMainWindow):
         # ---- 清除按钮 ----
         clear_btns_layout = QHBoxLayout()
         clear_btns_layout.setSpacing(8)
-        self.clear_starts_btn = QPushButton("清除起点")
-        self.clear_starts_btn.setObjectName("soft_btn")
-        self.clear_starts_btn.clicked.connect(lambda: self.on_clear_state(ElectrodeGrid.STATE_START))
-        clear_btns_layout.addWidget(self.clear_starts_btn, 1)
-
-        self.clear_targets_btn = QPushButton("清除目标")
-        self.clear_targets_btn.setObjectName("soft_btn")
-        self.clear_targets_btn.clicked.connect(lambda: self.on_clear_state(ElectrodeGrid.STATE_TARGET))
-        clear_btns_layout.addWidget(self.clear_targets_btn, 1)
-
         self.clear_obstacles_btn = QPushButton("清除障碍物")
         self.clear_obstacles_btn.setObjectName("soft_btn")
         self.clear_obstacles_btn.clicked.connect(lambda: self.on_clear_state(ElectrodeGrid.STATE_OBSTACLE))
         clear_btns_layout.addWidget(self.clear_obstacles_btn, 1)
 
-        grid_control_layout.addLayout(clear_btns_layout)
-
         self.reset_grid_btn = QPushButton("重置网格")
         self.reset_grid_btn.setObjectName("soft_btn")
         self.reset_grid_btn.clicked.connect(self.on_reset_grid)
-        grid_control_layout.addWidget(self.reset_grid_btn)
+        clear_btns_layout.addWidget(self.reset_grid_btn, 1)
+        grid_control_layout.addLayout(clear_btns_layout)
 
         grid_control_group.setLayout(grid_control_layout)
         left_panel.addWidget(grid_control_group)
@@ -554,39 +521,49 @@ class DMFControllerWindow(QMainWindow):
         droplet_layout.setContentsMargins(12, 12, 12, 12)
         droplet_layout.setSpacing(6)
 
+        # ---- 第一行：液滴编号选择器 + 上下翻页 ----
         droplet_selector_layout = QHBoxLayout()
-        droplet_selector_layout.setSpacing(10)
-        droplet_selector_layout.addWidget(QLabel("当前液滴："))
+        droplet_selector_layout.setSpacing(6)
+        droplet_selector_layout.addWidget(QLabel("当前："))
         self.droplet_label = QLabel("1")
         self.droplet_label.setAlignment(Qt.AlignCenter)
-        self.droplet_label.setFixedSize(50, 40)
+        self.droplet_label.setFixedSize(44, 40)
         self.droplet_label.setStyleSheet("""
             background: white; border: 1px solid #e2e8f0;
             border-radius: 8px; font-size: 18px; font-weight: 700; color: #0f172a;
         """)
-        droplet_btn_layout = QVBoxLayout()
-        droplet_btn_layout.setSpacing(1)
-        self.droplet_up = QPushButton("▲")
-        self.droplet_up.setFixedSize(32, 19)
-        self.droplet_up.setStyleSheet("QPushButton{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:4px;font-size:10px;color:#475569;padding:0} QPushButton:hover{background:#e2e8f0}")
-        self.droplet_up.clicked.connect(lambda: self._spin_droplet(1))
-        self.droplet_down = QPushButton("▼")
-        self.droplet_down.setFixedSize(32, 19)
-        self.droplet_down.setStyleSheet("QPushButton{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:4px;font-size:10px;color:#475569;padding:0} QPushButton:hover{background:#e2e8f0}")
-        self.droplet_down.clicked.connect(lambda: self._spin_droplet(-1))
-        droplet_btn_layout.addWidget(self.droplet_up)
-        droplet_btn_layout.addWidget(self.droplet_down)
         droplet_selector_layout.addWidget(self.droplet_label, 0)
-        droplet_selector_layout.addLayout(droplet_btn_layout)
-        self.next_droplet_btn = QPushButton("下一个液滴 →")
+        # 上一步 / 下一步
+        self.prev_droplet_btn = QPushButton("◀ 上一个")
+        self.prev_droplet_btn.setObjectName("soft_btn")
+        self.prev_droplet_btn.clicked.connect(self.on_prev_droplet)
+        droplet_selector_layout.addWidget(self.prev_droplet_btn, 1)
+        self.next_droplet_btn = QPushButton("下一个 ▶")
         self.next_droplet_btn.setObjectName("soft_btn")
         self.next_droplet_btn.clicked.connect(self.on_next_droplet)
         droplet_selector_layout.addWidget(self.next_droplet_btn, 1)
         droplet_layout.addLayout(droplet_selector_layout)
 
-        # 显示当前液滴的起点和终点
+        # ---- 第二行：回到液滴1 / 清除当前 / 清除所有 ----
+        droplet_action_layout = QHBoxLayout()
+        droplet_action_layout.setSpacing(6)
+        self.first_droplet_btn = QPushButton("⏹ 回到液滴1")
+        self.first_droplet_btn.setObjectName("soft_btn")
+        self.first_droplet_btn.clicked.connect(self.on_first_droplet)
+        droplet_action_layout.addWidget(self.first_droplet_btn, 1)
+        self.clear_droplet_btn = QPushButton("✕ 清除当前")
+        self.clear_droplet_btn.setObjectName("soft_btn")
+        self.clear_droplet_btn.clicked.connect(self.on_clear_droplet)
+        droplet_action_layout.addWidget(self.clear_droplet_btn, 1)
+        self.clear_all_droplets_btn = QPushButton("✕ 清除所有")
+        self.clear_all_droplets_btn.setObjectName("soft_btn")
+        self.clear_all_droplets_btn.clicked.connect(self.on_clear_all_droplets)
+        droplet_action_layout.addWidget(self.clear_all_droplets_btn, 1)
+        droplet_layout.addLayout(droplet_action_layout)
+
+        # ---- 第三行：当前液滴的起点 / 终点 ----
         start_target_layout = QHBoxLayout()
-        start_target_layout.setSpacing(10)
+        start_target_layout.setSpacing(8)
         self.droplet_start_label = QLabel("起点：未设置")
         self.droplet_start_label.setProperty("helper", True)
         self.droplet_target_label = QLabel("目标：未设置")
@@ -595,8 +572,8 @@ class DMFControllerWindow(QMainWindow):
         start_target_layout.addWidget(self.droplet_target_label, 1)
         droplet_layout.addLayout(start_target_layout)
 
-        # 配对状态总览
-        self.droplet_summary_label = QLabel("已配对：0 个液滴  总计配置：0 个")
+        # ---- 第四行：配对状态总览 ----
+        self.droplet_summary_label = QLabel("已配对：0 / 8  已配置：0 个液滴")
         self.droplet_summary_label.setProperty("helper", True)
         self.droplet_summary_label.setStyleSheet("color: #16a34a; font-weight: 600; font-size: 15px;")
         droplet_layout.addWidget(self.droplet_summary_label)
@@ -857,12 +834,6 @@ class DMFControllerWindow(QMainWindow):
 
     # ============ 液滴配置相关 ============
 
-    @pyqtSlot(int)
-    def on_droplet_changed(self, value):
-        """液滴选择器变更时更新网格和显示。"""
-        self.grid_widget.set_droplet_id(value)
-        self.update_droplet_info()
-
     def update_droplet_info(self):
         """更新液滴信息显示。"""
         did = int(self.droplet_label.text())
@@ -876,8 +847,9 @@ class DMFControllerWindow(QMainWindow):
         # 更新总览
         pairs = self.grid_widget.get_droplet_pairs()
         active_ids = self.grid_widget.get_active_droplet_ids()
+        max_droplets = 8
         self.droplet_summary_label.setText(
-            f"已配对：{len(pairs)} 个液滴  总计配置：{len(active_ids)} 个")
+            f"已配对：{len(pairs)} / {max_droplets}  已配置：{len(active_ids)} 个液滴")
 
     # ============ 路径规划 ============
 
@@ -1183,12 +1155,39 @@ class DMFControllerWindow(QMainWindow):
         self.update_droplet_info()
         self.statusBar().showMessage(f"已切换到液滴 {val}")
 
-    def _spin_droplet(self, delta):
-        val = int(self.droplet_label.text()) + delta
-        val = max(1, min(8, val))
+    def on_prev_droplet(self):
+        """切换到上一个液滴编号。"""
+        val = int(self.droplet_label.text()) - 1
+        if val < 1:
+            val = 8
         self.droplet_label.setText(str(val))
         self.grid_widget.set_droplet_id(val)
         self.update_droplet_info()
+        self.statusBar().showMessage(f"已切换到液滴 {val}")
+
+    def on_first_droplet(self):
+        """回到液滴1。"""
+        self.droplet_label.setText("1")
+        self.grid_widget.set_droplet_id(1)
+        self.update_droplet_info()
+        self.statusBar().showMessage("已回到液滴 1")
+
+    def on_clear_droplet(self):
+        """清除当前液滴的起点和终点，保留其他液滴和障碍物。"""
+        did = int(self.droplet_label.text())
+        self.grid_widget.clear_droplet(did)
+        self.droplet_plans = []
+        self.path_info_label.setText("路径：无")
+        self.update_droplet_info()
+        self.statusBar().showMessage(f"已清除液滴 {did} 的起点/终点")
+
+    def on_clear_all_droplets(self):
+        """清除所有液滴的起点/终点，保留障碍物和空闲格。"""
+        self.grid_widget.clear_all_droplets()
+        self.droplet_plans = []
+        self.path_info_label.setText("路径：无")
+        self.update_droplet_info()
+        self.statusBar().showMessage("已清除所有液滴的起点/终点")
 
     def _spin_row(self, delta):
         val = int(self.grid_rows_label.text()) + delta
@@ -1211,22 +1210,30 @@ class DMFControllerWindow(QMainWindow):
         self.statusBar().showMessage(f"已切换到{'起点/终点' if mode == 'sd' else '障碍物'}模式")
 
     def on_new_grid(self):
-        """根据行/列值重建网格。"""
+        """根据行/列值重建网格，并自动回到液滴1。"""
         rows = int(self.grid_rows_label.text())
         cols = int(self.grid_cols_label.text())
+        # 同步更新全局配置，确保路径算法和索引映射使用正确的尺寸
+        global_cfg.ELECTRODE_ROWS = rows
+        global_cfg.ELECTRODE_COLS = cols
+        global_cfg.TOTAL_ELECTRODES = rows * cols
         self.grid_widget.rebuild_grid(rows, cols)
         self.droplet_plans = []
+        self.droplet_label.setText("1")
+        self.grid_widget.set_droplet_id(1)
         self.path_info_label.setText("路径：无")
         self.update_droplet_info()
-        self.statusBar().showMessage(f"已新建 {rows}×{cols} 网格")
+        self.statusBar().showMessage(f"已新建 {rows}×{cols} 网格，当前液滴 1")
 
     def on_reset_grid(self):
-        """重置网格所有单元格为 Idle，同时清除路径显示。"""
+        """重置网格所有单元格为 Idle，同时清除路径显示，并回到液滴1。"""
         self.grid_widget.reset_grid()  # 内部已清除 paths 和 droplet 配对
         self.droplet_plans = []
+        self.droplet_label.setText("1")
+        self.grid_widget.set_droplet_id(1)
         self.path_info_label.setText("路径：无")
         self.update_droplet_info()
-        self.statusBar().showMessage("网格已重置")
+        self.statusBar().showMessage("网格已重置，当前液滴 1")
 
     def on_clear_state(self, state):
         """清除指定状态的所有单元格，同时清除路径显示。"""

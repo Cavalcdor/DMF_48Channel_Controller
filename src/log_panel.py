@@ -28,29 +28,29 @@ class LogPanel(QWidget):
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 16, 20, 16)
-        layout.setSpacing(10)
+        layout.setContentsMargins(24, 18, 24, 18)
+        layout.setSpacing(12)
 
         # ── 标题栏 ──
         toolbar = QHBoxLayout()
         toolbar.setSpacing(12)
 
         title = QLabel("📋 运行日志")
-        title.setStyleSheet("font-size: 18px; font-weight: 700; color: #0f172a;")
+        title.setStyleSheet("font-size: 20px; font-weight: 700; color: #0f172a;")
         toolbar.addWidget(title)
 
         toolbar.addStretch()
 
         self.log_count_label = QLabel("0 条记录")
-        self.log_count_label.setStyleSheet("font-size: 12px; color: #94a3b8;")
+        self.log_count_label.setStyleSheet("font-size: 13px; color: #94a3b8;")
         toolbar.addWidget(self.log_count_label)
 
         clear_btn = QPushButton("🗑 清空")
-        clear_btn.setFixedSize(90, 30)
+        clear_btn.setFixedSize(100, 34)
         clear_btn.setStyleSheet("""
             QPushButton {
                 background: #ffffff; border: 1px solid #e2e8f0;
-                border-radius: 6px; font-size: 12px; font-weight: 600;
+                border-radius: 6px; font-size: 13px; font-weight: 600;
                 color: #64748b;
             }
             QPushButton:hover { background: #f1f5f9; border-color: #94a3b8; }
@@ -71,7 +71,7 @@ class LogPanel(QWidget):
                 border-radius: 10px;
                 padding: 14px;
                 font-family: "Consolas", "Courier New", "Microsoft YaHei", monospace;
-                font-size: 13px;
+                font-size: 14px;
                 selection-background-color: #3b82f6;
                 selection-color: #ffffff;
             }

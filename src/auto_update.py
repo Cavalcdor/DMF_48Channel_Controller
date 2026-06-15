@@ -11,7 +11,7 @@ import threading
 import webbrowser
 from pathlib import Path
 from urllib.request import urlopen, Request
-from urllib.error import URLError
+from urllib.error import URLError, HTTPError
 
 from PyQt5.QtWidgets import (
     QMessageBox, QProgressDialog, QApplication
@@ -24,6 +24,7 @@ from src.splash_screen import VERSION
 GITHUB_OWNER = "Cavalcdor"
 GITHUB_REPO = "DMF_48Channel_Controller"
 RELEASES_API = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
+TAGS_API = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/tags"
 
 
 class UpdateChecker(QThread):
@@ -39,6 +40,30 @@ class UpdateChecker(QThread):
     def run(self):
         """执行更新检查。"""
         try:
+            # 先尝试通过 Releases API 获取最新正式版
+            result = self._check_releases()
+            if result:
+                self.check_finished.emit(result)
+                return
+
+            # 降级：通过 Tags API 获取最新版本号（无安装包链接）
+            result = self._check_tags()
+            if result:
+                self.check_finished.emit(result)
+                return
+
+            self.check_error.emit("未找到任何版本发布，请管理员在 GitHub 上创建 Release")
+
+        except URLError as e:
+            self.check_error.emit(f"网络连接失败：{e.reason}")
+        except json.JSONDecodeError:
+            self.check_error.emit("服务器返回数据格式异常")
+        except Exception as e:
+            self.check_error.emit(f"检查更新时出错：{str(e)}")
+
+    def _check_releases(self):
+        """通过 Releases API 检查。返回 result dict 或 None。"""
+        try:
             req = Request(RELEASES_API, headers={
                 "User-Agent": f"DMFController/{VERSION}",
                 "Accept": "application/vnd.github.v3+json",
@@ -50,7 +75,6 @@ class UpdateChecker(QThread):
             download_url = ""
             release_notes = data.get("body", "")
 
-            # 找第一个 exe 安装包下载链接
             for asset in data.get("assets", []):
                 name = asset.get("name", "")
                 if name.endswith((".exe", ".msi")):
@@ -59,20 +83,53 @@ class UpdateChecker(QThread):
 
             has_update = self._compare_versions(latest_version, VERSION) > 0
 
-            self.check_finished.emit({
+            return {
                 "has_update": has_update,
                 "latest_version": latest_version,
                 "download_url": download_url,
                 "release_notes": release_notes[:500] if release_notes else "",
                 "current_version": VERSION,
-            })
+            }
+        except HTTPError as e:
+            if e.code == 404:
+                return None  # 没有 Release，降级
+            raise
+        except URLError:
+            return None
 
-        except URLError as e:
-            self.check_error.emit(f"网络连接失败：{e.reason}")
-        except json.JSONDecodeError:
-            self.check_error.emit("服务器返回数据格式异常")
-        except Exception as e:
-            self.check_error.emit(f"检查更新时出错：{str(e)}")
+    def _check_tags(self):
+        """降级：通过 Tags API 获取最新版本号。"""
+        try:
+            req = Request(TAGS_API, headers={
+                "User-Agent": f"DMFController/{VERSION}",
+                "Accept": "application/vnd.github.v3+json",
+            })
+            with urlopen(req, timeout=self.timeout) as resp:
+                tags = json.loads(resp.read().decode("utf-8"))
+
+            if not tags:
+                return None
+
+            # 找最高版本的 tag（过滤 v 前缀）
+            latest_tag = ""
+            for t in tags:
+                name = t.get("name", "").lstrip("v")
+                if self._compare_versions(name, latest_tag) > 0:
+                    latest_tag = name
+
+            if not latest_tag:
+                return None
+
+            has_update = self._compare_versions(latest_tag, VERSION) > 0
+            return {
+                "has_update": has_update,
+                "latest_version": latest_tag,
+                "download_url": "",
+                "release_notes": "（无 Release 发布，仅检测到 Git 标签）",
+                "current_version": VERSION,
+            }
+        except (HTTPError, URLError):
+            return None
 
     @staticmethod
     def _compare_versions(v1: str, v2: str) -> int:
@@ -142,12 +199,13 @@ class AutoUpdater(QObject):
         if result["release_notes"]:
             msg.setDetailedText(f"更新说明：\n{result['release_notes']}")
 
-        download_btn = msg.addButton("下载更新", QMessageBox.ActionRole)
-        msg.addButton("稍后再说", QMessageBox.RejectRole)
+        if result["download_url"]:
+            download_btn = msg.addButton("下载更新", QMessageBox.ActionRole)
+            msg.addButton("稍后再说", QMessageBox.RejectRole)
 
         msg.exec_()
 
-        if msg.clickedButton() == download_btn and result["download_url"]:
+        if result.get("download_url") and msg.clickedButton() == download_btn:
             webbrowser.open(result["download_url"])
 
 

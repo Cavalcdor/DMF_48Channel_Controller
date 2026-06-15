@@ -79,7 +79,7 @@ class SettingsWidget(QWidget):
         self.delay_spin.setSuffix(" ms")
         self.delay_spin.setSingleStep(50)
         self.delay_spin.setFixedWidth(160)
-        pf.addRow("默认步长延迟：", self.delay_spin)
+        pf.addRow("默认执行间隔：", self.delay_spin)
 
         layout.addWidget(path_group)
 

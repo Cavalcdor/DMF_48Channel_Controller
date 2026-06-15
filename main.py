@@ -703,11 +703,11 @@ class DMFControllerWindow(QMainWindow):
 
         # 液滴操作按钮行
         da = QHBoxLayout()
-        da.setSpacing(6)
-        self.clear_droplet_btn = QPushButton("清除当前液滴")
+        da.setSpacing(8)
+        self.clear_droplet_btn = QPushButton("✕ 清除当前")
         self.clear_droplet_btn.clicked.connect(self.on_clear_droplet)
         da.addWidget(self.clear_droplet_btn)
-        self.clear_all_droplets_btn = QPushButton("清除全部液滴")
+        self.clear_all_droplets_btn = QPushButton("✕ 清除全部")
         self.clear_all_droplets_btn.clicked.connect(self.on_clear_all_droplets)
         da.addWidget(self.clear_all_droplets_btn)
         dl.addLayout(da)

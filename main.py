@@ -80,7 +80,7 @@ class DMFControllerWindow(QMainWindow):
         }
         QWidget {
             font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
-            font-size: 15px;
+            font-size: 18px;
             color: #1e293b;
         }
 
@@ -89,7 +89,7 @@ class DMFControllerWindow(QMainWindow):
             background-color: #f8f9fa;
             border-bottom: 1px solid #d4d8dd;
             padding: 4px 0;
-            font-size: 15px;
+            font-size: 18px;
         }
         QMenuBar::item {
             padding: 6px 18px;
@@ -106,9 +106,9 @@ class DMFControllerWindow(QMainWindow):
             padding: 6px;
         }
         QMenu::item {
-            padding: 8px 32px 8px 20px;
+            padding: 10px 36px 10px 24px;
             border-radius: 4px;
-            font-size: 14px;
+            font-size: 17px;
         }
         QMenu::item:selected {
             background: #eef2ff;
@@ -129,8 +129,8 @@ class DMFControllerWindow(QMainWindow):
         QToolButton {
             border: 1px solid transparent;
             border-radius: 6px;
-            padding: 6px 14px;
-            font-size: 14px;
+            padding: 8px 18px;
+            font-size: 17px;
             color: #334155;
             background: transparent;
         }
@@ -154,9 +154,9 @@ class DMFControllerWindow(QMainWindow):
             background: #ffffff;
             border: 1px solid #d4d8dd;
             border-radius: 8px;
-            margin-top: 10px;
-            padding: 18px 12px 12px 12px;
-            font-size: 15px;
+            margin-top: 12px;
+            padding: 22px 14px 14px 14px;
+            font-size: 18px;
             font-weight: 600;
             color: #0f172a;
         }
@@ -164,8 +164,8 @@ class DMFControllerWindow(QMainWindow):
             subcontrol-origin: margin;
             subcontrol-position: top left;
             left: 14px;
-            padding: 0 8px;
-            font-size: 16px;
+            padding: 0 10px;
+            font-size: 19px;
             font-weight: 700;
             color: #1e293b;
             letter-spacing: 0.5px;
@@ -175,8 +175,8 @@ class DMFControllerWindow(QMainWindow):
         QPushButton {
             border: 1px solid #cbd5e1;
             border-radius: 6px;
-            padding: 8px 18px;
-            font-size: 14px;
+            padding: 10px 22px;
+            font-size: 17px;
             font-weight: 500;
             color: #334155;
             background: #ffffff;
@@ -200,8 +200,8 @@ class DMFControllerWindow(QMainWindow):
             color: #ffffff;
             border: none;
             font-weight: 700;
-            font-size: 14px;
-            padding: 8px 20px;
+            font-size: 17px;
+            padding: 10px 24px;
         }
         QPushButton#btn_primary:hover {
             background: #3b82f6;
@@ -220,8 +220,8 @@ class DMFControllerWindow(QMainWindow):
             color: #ffffff;
             border: none;
             font-weight: 700;
-            font-size: 14px;
-            padding: 8px 20px;
+            font-size: 17px;
+            padding: 10px 24px;
         }
         QPushButton#btn_run:hover {
             background: #10b981;
@@ -240,8 +240,8 @@ class DMFControllerWindow(QMainWindow):
             color: #ffffff;
             border: none;
             font-weight: 700;
-            font-size: 14px;
-            padding: 8px 20px;
+            font-size: 17px;
+            padding: 10px 24px;
         }
         QPushButton#btn_stop:hover {
             background: #ef4444;
@@ -259,9 +259,9 @@ class DMFControllerWindow(QMainWindow):
             background: #ffffff;
             color: #475569;
             border: 1px solid #cbd5e1;
-            font-size: 13px;
+            font-size: 16px;
             font-weight: 500;
-            padding: 6px 12px;
+            padding: 8px 16px;
         }
         QPushButton#mode_btn:hover {
             background: #f1f5f9;
@@ -276,11 +276,11 @@ class DMFControllerWindow(QMainWindow):
         QComboBox {
             border: 1px solid #cbd5e1;
             border-radius: 6px;
-            padding: 5px 10px;
+            padding: 6px 12px;
             background: #ffffff;
             color: #0f172a;
-            font-size: 14px;
-            min-height: 26px;
+            font-size: 17px;
+            min-height: 30px;
         }
         QComboBox:hover { border-color: #94a3b8; }
         QComboBox:focus { border-color: #3b82f6; }
@@ -292,39 +292,39 @@ class DMFControllerWindow(QMainWindow):
         QSpinBox {
             border: 1px solid #cbd5e1;
             border-radius: 6px;
-            padding: 4px 8px;
+            padding: 6px 10px;
             background: #ffffff;
             color: #0f172a;
-            font-size: 14px;
-            min-height: 26px;
+            font-size: 17px;
+            min-height: 30px;
         }
         QSpinBox:focus { border-color: #3b82f6; }
 
         QLineEdit {
             border: 1px solid #cbd5e1;
             border-radius: 6px;
-            padding: 5px 10px;
+            padding: 6px 12px;
             background: #ffffff;
             color: #0f172a;
-            font-size: 14px;
-            min-height: 26px;
+            font-size: 17px;
+            min-height: 30px;
         }
         QLineEdit:focus { border-color: #3b82f6; }
 
         /* ========== 标签 ========== */
         QLabel {
             color: #334155;
-            font-size: 14px;
+            font-size: 17px;
         }
         QLabel#status_value {
             font-weight: 600;
-            font-size: 15px;
+            font-size: 18px;
         }
         QLabel#section_title {
-            font-size: 16px;
+            font-size: 19px;
             font-weight: 700;
             color: #0f172a;
-            padding: 6px 0;
+            padding: 8px 0;
         }
 
         /* ========== 状态栏 ========== */
@@ -332,8 +332,8 @@ class DMFControllerWindow(QMainWindow):
             background: #f8f9fa;
             border-top: 1px solid #d4d8dd;
             color: #475569;
-            font-size: 13px;
-            padding: 4px 14px;
+            font-size: 16px;
+            padding: 6px 16px;
         }
         QStatusBar::item { border: none; }
 
@@ -343,9 +343,9 @@ class DMFControllerWindow(QMainWindow):
             color: #e2e8f0;
             border: 1px solid #1e293b;
             border-radius: 6px;
-            padding: 10px;
+            padding: 12px;
             font-family: "Consolas", "Courier New", monospace;
-            font-size: 13px;
+            font-size: 16px;
         }
 
         /* ========== 串口监视区 ========== */
@@ -354,10 +354,10 @@ class DMFControllerWindow(QMainWindow):
             color: #e2e8f0;
             border: 1px solid #1e293b;
             border-radius: 6px;
-            padding: 8px;
+            padding: 10px;
             font-family: "Consolas", "Courier New", monospace;
-            font-size: 13px;
-            min-height: 80px;
+            font-size: 16px;
+            min-height: 100px;
         }
         """
         self.setStyleSheet(stylesheet)
@@ -1399,6 +1399,10 @@ class DMFControllerWindow(QMainWindow):
 
 def main():
     """主函数：显示欢迎界面 → 加载资源 → 启动主窗口。"""
+    # ⭐ 启用高分屏 DPI 缩放（必须在 QApplication 创建之前）
+    os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
+    os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
+
     app = QApplication(sys.argv)
 
     # 设置应用样式

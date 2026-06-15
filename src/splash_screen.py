@@ -35,15 +35,24 @@ class DMFSplashScreen(QWidget):
             Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.SplashScreen
         )
         self.setAttribute(Qt.WA_TranslucentBackground, False)
-        # ⭐ 强制窗口逻辑尺寸为 pixmap 大小（device-independent pixels）
-        self.setFixedSize(QSize(self.SPLASH_W, self.SPLASH_H))
 
         # 加载状态
         self.current_progress = 0
         self._particle_offset = 0
         self._pulse_phase = 0
-        self._pixmap = QPixmap(self.SPLASH_W, self.SPLASH_H)
+
+        # 获取屏幕设备像素比（用于高分屏）
+        self._screen = QApplication.primaryScreen()
+        self._dpr = self._screen.devicePixelRatio() if self._screen else 1.0
+
+        # 按 DPR 创建 pixmap（窗口逻辑尺寸保持 SPLASH_W × SPLASH_H）
+        self._pixmap = QPixmap(int(self.SPLASH_W * self._dpr),
+                               int(self.SPLASH_H * self._dpr))
+        self._pixmap.setDevicePixelRatio(self._dpr)
         self._pixmap.fill(Qt.transparent)
+
+        # ⭐ 强制窗口逻辑尺寸
+        self.setFixedSize(QSize(self.SPLASH_W, self.SPLASH_H))
 
         # 连接信号
         self.progress_updated.connect(self._on_progress_updated)
@@ -79,7 +88,11 @@ class DMFSplashScreen(QWidget):
     def _draw_splash(self, progress: int, message: str):
         """绘制启动画面到离屏 pixmap 并触发重绘。"""
         W, H = self.SPLASH_W, self.SPLASH_H
-        pixmap = QPixmap(W, H)
+        dpr = self._dpr
+
+        # 按设备像素比创建物理像素充足的 pixmap
+        pixmap = QPixmap(int(W * dpr), int(H * dpr))
+        pixmap.setDevicePixelRatio(dpr)
         pixmap.fill(Qt.transparent)
 
         painter = QPainter(pixmap)

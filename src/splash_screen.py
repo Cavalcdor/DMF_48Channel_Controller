@@ -8,47 +8,45 @@ VERSION = "2.1.0"
 AUTHOR = "Charles WENG"
 YEAR = 2026
 
-from PyQt5.QtWidgets import QSplashScreen, QProgressBar, QLabel, QVBoxLayout, QWidget, QApplication
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QRect
+from PyQt5.QtWidgets import QWidget, QApplication
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QRect, QSize
 from PyQt5.QtGui import (
     QPixmap, QPainter, QColor, QFont, QLinearGradient,
-    QPen, QFontDatabase, QRadialGradient, QBrush, QPainterPath
+    QPen, QRadialGradient, QBrush, QPainterPath
 )
-import time
 import math
 
 
-class DMFSplashScreen(QSplashScreen):
-    """DMF 48通道控制器 欢迎启动界面。"""
+class DMFSplashScreen(QWidget):
+    """DMF 48通道控制器 欢迎启动界面（基于 QWidget，完全控制尺寸）。"""
+
+    # 固定尺寸常量
+    SPLASH_W = 800
+    SPLASH_H = 540
 
     # 加载进度信号
     progress_updated = pyqtSignal(int, str)
 
     def __init__(self):
-        # 创建启动画面图像
-        splash_pixmap = QPixmap(800, 540)
-        splash_pixmap.fill(Qt.transparent)
+        super().__init__()
 
-        super().__init__(splash_pixmap)
-
-        # 存储引用防止被回收
-        self._pixmap = splash_pixmap
+        # 窗口标志 — 无框、置顶、启动画面类型
+        self.setWindowFlags(
+            Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.SplashScreen
+        )
+        self.setAttribute(Qt.WA_TranslucentBackground, False)
+        # ⭐ 强制窗口逻辑尺寸为 pixmap 大小（device-independent pixels）
+        self.setFixedSize(QSize(self.SPLASH_W, self.SPLASH_H))
 
         # 加载状态
         self.current_progress = 0
         self._particle_offset = 0
         self._pulse_phase = 0
+        self._pixmap = QPixmap(self.SPLASH_W, self.SPLASH_H)
+        self._pixmap.fill(Qt.transparent)
 
         # 连接信号
         self.progress_updated.connect(self._on_progress_updated)
-
-        # 设置窗口属性
-        self.setWindowFlags(
-            Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.SplashScreen
-        )
-        self.setAttribute(Qt.WA_TranslucentBackground, False)
-        # 强制窗口大小与 pixmap 一致，防止裁剪
-        self.setFixedSize(splash_pixmap.size())
 
         # 动画定时器 — 粒子浮动 + 脉冲光效
         self._anim_timer = QTimer(self)
@@ -58,15 +56,29 @@ class DMFSplashScreen(QSplashScreen):
         # 绘制初始画面
         self._draw_splash(0, "正在初始化...")
 
+    # ── QWidget 事件重写 ──────────────────────────────────
+
+    def paintEvent(self, event):
+        """将缓存的 pixmap 绘制到窗口。"""
+        painter = QPainter(self)
+        painter.drawPixmap(0, 0, self._pixmap)
+        painter.end()
+
+    def mousePressEvent(self, event):
+        """点击不关闭启动画面（由主窗口控制关闭时机）。"""
+        pass
+
+    # ── 动画循环 ──────────────────────────────────────────
+
     def _animate_frame(self):
-        """每帧更新粒子位置和脉冲效果，重绘画面。"""
+        """每帧更新粒子位置和脉冲效果，触发重绘。"""
         self._particle_offset = (self._particle_offset + 1) % 80
         self._pulse_phase = (self._pulse_phase + 1) % 100
         self._draw_splash(self.current_progress, "")
 
     def _draw_splash(self, progress: int, message: str):
-        """绘制启动画面（v2.1 放大版 — 适配高分屏）。"""
-        W, H = 800, 540
+        """绘制启动画面到离屏 pixmap 并触发重绘。"""
+        W, H = self.SPLASH_W, self.SPLASH_H
         pixmap = QPixmap(W, H)
         pixmap.fill(Qt.transparent)
 
@@ -245,8 +257,7 @@ class DMFSplashScreen(QSplashScreen):
         painter.end()
 
         self._pixmap = pixmap
-        self.setPixmap(pixmap)
-        self.setFixedSize(W, H)
+        self.update()  # 触发 paintEvent 绘制到窗口
 
     def _on_progress_updated(self, value: int, message: str):
         """更新进度显示。"""
@@ -270,7 +281,14 @@ class SplashManager:
         self.splash = DMFSplashScreen()
 
     def show(self):
-        """显示启动画面。"""
+        """显示启动画面（居中显示）。"""
+        # 确保窗口尺寸正确
+        self.splash.setFixedSize(QSize(self.splash.SPLASH_W, self.splash.SPLASH_H))
+        # 居中于屏幕
+        screen_geo = QApplication.primaryScreen().geometry()
+        x = (screen_geo.width() - self.splash.SPLASH_W) // 2
+        y = (screen_geo.height() - self.splash.SPLASH_H) // 2
+        self.splash.move(x, y)
         self.splash.show()
         QApplication.processEvents()
 

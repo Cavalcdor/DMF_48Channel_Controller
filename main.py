@@ -426,7 +426,7 @@ class DMFControllerWindow(QMainWindow):
         file_menu.addAction(act_save)
         act_save_as = QAction("另存为...", self)
         act_save_as.setShortcut("Ctrl+Shift+S")
-        act_save_as.triggered.connect(lambda: self.project_manager.save_project(as_new=True))
+        act_save_as.triggered.connect(self._project_save_as)
         file_menu.addAction(act_save_as)
         file_menu.addSeparator()
         # ── 最近文件子菜单 ──
@@ -1400,6 +1400,10 @@ class DMFControllerWindow(QMainWindow):
     def _project_save(self):
         """保存工程。"""
         self.project_manager.save_project()
+
+    def _project_save_as(self):
+        """另存为工程。"""
+        self.project_manager.save_project_as()
 
     # ── 最近文件动态填充 ──────────────────────
 

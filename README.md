@@ -7,6 +7,11 @@
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue)](https://python.org)
 [![PyQt5](https://img.shields.io/badge/PyQt5-5.15%2B-green)](https://pypi.org/project/PyQt5/)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
+[![Download](https://img.shields.io/badge/Download-Installer-brightgreen)](https://github.com/Cavalcdor/DMF_48Channel_Controller/releases)
+[![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-brightgreen)](https://www.microsoft.com/windows)
+
+**📥 下载安装包**：前往 [GitHub Releases](https://github.com/Cavalcdor/DMF_48Channel_Controller/releases) 获取最新版安装包  
+**📖 安装指南**：详见 [INSTALL.md](INSTALL.md)
 
 </div>
 

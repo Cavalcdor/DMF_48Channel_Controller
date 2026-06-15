@@ -4,7 +4,7 @@ DMF 48通道控制器 — 欢迎启动界面
 """
 
 # ========== 应用全局信息 ==========
-VERSION = "2.2.1"
+VERSION = "2.2.3"
 AUTHOR = "Charles WENG"
 YEAR = 2026
 
@@ -274,11 +274,6 @@ class DMFSplashScreen(QWidget):
     def set_progress(self, value: int, message: str = ""):
         """线程安全地更新进度。"""
         self.progress_updated.emit(value, message)
-
-    def mousePressEvent(self, event):
-        """点击不关闭启动画面（由主窗口控制关闭时机）。"""
-        pass
-
 
 class SplashManager:
     """启动画面管理器，控制加载流程。"""

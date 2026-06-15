@@ -2,7 +2,7 @@
 ; 使用 Inno Setup 6 (https://jrsoftware.org/isinfo.php) 编译
 
 #define MyAppName "DMF 48通道控制器"
-#define MyAppVersion "2.2.2"
+#define MyAppVersion "2.2.3"
 #define MyAppPublisher "Charles WENG"
 #define MyAppURL "https://github.com/Cavalcdor/DMF_48Channel_Controller"
 #define MyAppExeName "DMF_48Channel_Controller.exe"
@@ -72,17 +72,28 @@ Type: filesandordirs; Name: "{localappdata}\{#MyAppName}"
 { 安装前检查是否正在运行 }
 function IsAppRunning: Boolean;
 var
-  ErrorCode: Integer;
+  ResultCode: Integer;
 begin
-  Result := ShellExec('open', 'taskkill', '/f /im ' + '{#MyAppExeName}', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  Result := False;
+  { taskkill /f /im 返回 0=成功杀掉了进程, 128=无此进程 }
+  if Exec('taskkill', '/f /im ' + '{#MyAppExeName}', '', SW_HIDE,
+          ewWaitUntilTerminated, ResultCode) then
+    Result := (ResultCode = 0);
 end;
 
 function InitializeSetup: Boolean;
+var
+  RetVal: Integer;
 begin
   Result := True;
   if IsAppRunning then
   begin
-    SuppressibleMsgBox('应用程序正在运行，已自动关闭。' + #13#10 +
-      '请保存数据后重试安装。', mbInformation, MB_OK, 0);
+    RetVal := SuppressibleMsgBox(
+      '检测到应用程序正在运行，是否自动关闭后继续安装？' + #13#13 +
+      '选择「是」将自动关闭程序并继续安装。' + #13 +
+      '选择「否」将取消安装，请保存数据后重试。',
+      mbConfirmation, MB_YESNO, IDYES);
+    if RetVal <> IDYES then
+      Result := False;
   end;
 end;

@@ -193,8 +193,13 @@ class AboutDialog(QDialog):
         gh_row.setContentsMargins(0, 0, 0, 0)
         gh_row.setSpacing(8)
 
-        gh_icon = QLabel("🌐")
-        gh_icon.setStyleSheet("font-size: 13px; background: transparent;")
+        gh_icon = QLabel("G")
+        gh_icon.setFixedSize(20, 20)
+        gh_icon.setAlignment(Qt.AlignCenter)
+        gh_icon.setStyleSheet("""
+            font-size: 11px; font-weight: 800; color: #60a5fa;
+            background: #1e3a5f; border-radius: 10px;
+        """)
         gh_row.addWidget(gh_icon)
 
         gh_link = ClickableLabel("GitHub 仓库", GITHUB_URL)

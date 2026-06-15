@@ -148,6 +148,10 @@ class SettingsWidget(QWidget):
         self._settings.setValue("default_rows", self.default_rows.value())
         self._settings.setValue("default_cols", self.default_cols.value())
 
+        # 同步到当前会话
+        from . import global_cfg
+        global_cfg.SERIAL_BAUDRATE = int(self.baud_combo.currentText())
+
         # 同步到主窗口
         if self.main_window:
             # 更新 delay_spinbox 的当前值
@@ -155,13 +159,16 @@ class SettingsWidget(QWidget):
             idx = self.main_window.delay_spinbox.findText(delay_str)
             if idx >= 0:
                 self.main_window.delay_spinbox.setCurrentIndex(idx)
+            # 同步网格默认值到主窗口显示
+            self.main_window.grid_rows_label.setText(str(self.default_rows.value()))
+            self.main_window.grid_cols_label.setText(str(self.default_cols.value()))
 
         QMessageBox.information(
             self, "设置已保存",
             "设置已保存。\n\n"
             "• 步长延迟已即时生效\n"
-            "• 串口波特率将在下次连接时生效\n"
-            "• 网格默认值将在新建网格时生效"
+            "• 串口波特率已即时生效\n"
+            "• 网格默认值已即时生效"
         )
 
     def _reset_defaults(self):

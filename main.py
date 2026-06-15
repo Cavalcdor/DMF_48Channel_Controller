@@ -385,14 +385,13 @@ class DMFControllerWindow(QMainWindow):
         }
 
         /* ========== 串口监视区 ========== */
-        QLabel#monitor_rx {
+        QTextEdit#monitor_rx {
             background: #0f172a;
             color: #e2e8f0;
             border: 1px solid #1e293b;
             border-radius: 6px;
             padding: 8px;
             font-family: "Consolas", "Courier New", monospace;
-            min-height: 60px;
         }
         """
         self.setStyleSheet(stylesheet)
@@ -608,6 +607,7 @@ class DMFControllerWindow(QMainWindow):
         cr.setSpacing(6)
         self.test_custom_input = QLineEdit()
         self.test_custom_input.setPlaceholderText("输入指令...")
+        self.test_custom_input.returnPressed.connect(self.on_test_custom)
         cr.addWidget(self.test_custom_input, 1)
         cst_send = QPushButton("发送")
         cst_send.setObjectName("btn_primary")
@@ -616,12 +616,12 @@ class DMFControllerWindow(QMainWindow):
         cr.addWidget(cst_send)
         sl.addLayout(cr)
 
-        # 接收数据显示
-        self.test_received_label = QLabel("等待数据...")
+        # 接收数据显示（QTextEdit 支持追加和滚动）
+        self.test_received_label = QTextEdit()
+        self.test_received_label.setReadOnly(True)
         self.test_received_label.setObjectName("monitor_rx")
-        self.test_received_label.setWordWrap(True)
-        self.test_received_label.setMinimumHeight(40)
-        self.test_received_label.setMaximumHeight(60)
+        self.test_received_label.setMinimumHeight(60)
+        self.test_received_label.setMaximumHeight(100)
         sl.addWidget(self.test_received_label)
 
         sg.setLayout(sl)
@@ -967,17 +967,16 @@ class DMFControllerWindow(QMainWindow):
     def on_serial_data(self, data):
         """处理串口接收数据。"""
         self.statusBar().showMessage(f"收到: {data}")
-        # 同时更新串口测试区的接收显示
-        current = self.test_received_label.text()
-        if current == "等待数据...":
-            self.test_received_label.setText(data)
-        else:
-            # 保留最近 5 条
-            lines = current.split('\n')
-            lines.append(data)
-            if len(lines) > 5:
-                lines = lines[-5:]
-            self.test_received_label.setText('\n'.join(lines))
+        # 追加到串口监视区，自动滚动到底部
+        self.test_received_label.append(data)
+        # 限制最多 50 行
+        doc = self.test_received_label.document()
+        if doc.blockCount() > 50:
+            cursor = self.test_received_label.textCursor()
+            cursor.movePosition(cursor.Start)
+            cursor.movePosition(cursor.Down, cursor.KeepAnchor,
+                                doc.blockCount() - 50)
+            cursor.removeSelectedText()
 
     @pyqtSlot(str)
     def on_serial_error(self, error_msg):
@@ -1120,7 +1119,7 @@ class DMFControllerWindow(QMainWindow):
                     f"  液滴{r['droplet_id']}: {r['start']}→{r['target']} ({len(r['path'])}步)")
             else:
                 info_lines.append(
-                    f"  液滴{r['droplet_id']}: {r['start']}→{r['target']} ❌ 无路径")
+                    f"  液滴{r['droplet_id']}: {r['start']}→{r['target']} 无路径")
         self.path_info_label.setText('\n'.join(info_lines))
 
         if failed:
@@ -1163,7 +1162,7 @@ class DMFControllerWindow(QMainWindow):
         cmd = self.test_cmd_combo.currentText()
         relay = self.test_relay_spin.value()
         self.serial_thread.send_cmd(f"{cmd},{relay}")
-        self.test_received_label.setText(f">>> 发送: {cmd},{relay}\n等待数据...")
+        self.test_received_label.append(f">>> 发送: {cmd},{relay}")
 
     @pyqtSlot(str)
     def on_test_quick(self, cmd):
@@ -1173,7 +1172,7 @@ class DMFControllerWindow(QMainWindow):
             return
         actual_cmd = cmd.replace(' ', '')
         self.serial_thread.send_cmd(actual_cmd)
-        self.test_received_label.setText(f">>> 发送: {actual_cmd}\n等待数据...")
+        self.test_received_label.append(f">>> 发送: {actual_cmd}")
 
     @pyqtSlot()
     def on_test_custom(self):
@@ -1185,11 +1184,15 @@ class DMFControllerWindow(QMainWindow):
         if not text:
             return
         self.serial_thread.send_cmd(text)
-        self.test_received_label.setText(f">>> 发送: {text}\n等待数据...")
+        self.test_received_label.append(f">>> 发送: {text}")
         self.test_custom_input.clear()
 
     def _start_next_droplet(self):
         """开始执行下一个液滴的路径。"""
+        # 安全：如果定时器已在运行，先停止
+        if self.move_timer.isActive():
+            self.move_timer.stop()
+
         # 找到下一个成功的路径
         while self.current_plan_index < len(self.droplet_plans):
             plan = self.droplet_plans[self.current_plan_index]
@@ -1236,6 +1239,10 @@ class DMFControllerWindow(QMainWindow):
         self.move_timer.stop()
         # 断开所有继电器
         self.serial_thread.send_alloff()
+        # 清除路径执行状态
+        self.current_path = []
+        self.droplet_plans = []
+        self.current_plan_index = 0
         self.run_path_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
         self.grid_widget.setEnabled(True)
@@ -1325,6 +1332,13 @@ class DMFControllerWindow(QMainWindow):
 
     def on_clear_all_droplets(self):
         """清除所有液滴的起点/终点，保留障碍物和空闲格。"""
+        reply = QMessageBox.question(
+            self, "清除全部液滴",
+            "确定要清除所有液滴的起点和终点吗？\n\n此操作不可撤销。",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+        )
+        if reply != QMessageBox.Yes:
+            return
         self.grid_widget.clear_all_droplets()
         self.droplet_plans = []
         self.path_info_label.setText("路径：无")
@@ -1380,11 +1394,18 @@ class DMFControllerWindow(QMainWindow):
 
     def on_clear_state(self, state):
         """清除指定状态的所有单元格，同时清除路径显示。"""
-        self.grid_widget.clear_state(state)  # 内部已清除 paths
+        state_name = ElectrodeGrid.STATE_NAMES[state]
+        reply = QMessageBox.question(
+            self, f"清除{state_name}",
+            f"确定要清除所有 {state_name} 单元格吗？\n\n此操作不可撤销。",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+        )
+        if reply != QMessageBox.Yes:
+            return
+        self.grid_widget.clear_state(state)
         self.droplet_plans = []
         self.path_info_label.setText("路径：无")
         self.update_droplet_info()
-        state_name = ElectrodeGrid.STATE_NAMES[state]
         self.log_panel.log_info(f"已清除所有 {state_name} 单元格")
 
     # ── 工程管理 ──────────────────────────────

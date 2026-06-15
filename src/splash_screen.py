@@ -275,33 +275,46 @@ class SplashManager:
         """关闭启动画面。"""
         self.splash.close()
 
-    def run_loading_sequence(self, tasks: list):
-        """执行加载任务序列。
+    def run_loading_sequence(self, tasks: list, min_duration: float = 3.0):
+        """执行加载任务序列，确保启动画面至少停留 min_duration 秒。
 
         Args:
             tasks: [(weight, message, callback), ...]
                    weight: 该任务占总进度的比重
                    message: 显示的文字
                    callback: 执行的任务函数
+            min_duration: 最短停留时间（秒），默认 3.0
         """
+        import time as _time
+        _start = _time.time()
+
         total_weight = sum(t[0] for t in tasks)
         accumulated = 0
 
         for weight, message, callback in tasks:
-            # 更新进度
             accumulated += weight
             progress = int(accumulated * 100 / total_weight)
             self.splash.set_progress(max(1, min(99, progress)), message)
             QApplication.processEvents()
 
-            # 执行任务
             if callback:
                 callback()
 
-            # 小额延时让启动画面有呼吸感
-            time.sleep(0.05)
+            _time.sleep(0.05)
 
-        # 完成
+        # 加载完毕，检查是否达到最低展示时间
+        elapsed = _time.time() - _start
+        remaining = min_duration - elapsed
+        if remaining > 0:
+            # 用进度条动画填充剩余时间
+            steps = int(remaining / 0.05)
+            for i in range(1, steps + 1):
+                fill = 99 + int(i * 1 / steps)  # 99→100 平滑过渡
+                msg = "加载完成" if i < steps else "加载完成，正在启动..."
+                self.splash.set_progress(min(100, fill), msg)
+                QApplication.processEvents()
+                _time.sleep(0.05)
+
         self.splash.set_progress(100, "加载完成，正在启动...")
         QApplication.processEvents()
-        time.sleep(0.2)
+        _time.sleep(0.2)

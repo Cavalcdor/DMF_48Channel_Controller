@@ -47,6 +47,8 @@ class DMFSplashScreen(QSplashScreen):
             Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.SplashScreen
         )
         self.setAttribute(Qt.WA_TranslucentBackground, False)
+        # 强制窗口大小与 pixmap 一致，防止裁剪
+        self.setFixedSize(splash_pixmap.size())
 
         # 动画定时器 — 粒子浮动 + 脉冲光效
         self._anim_timer = QTimer(self)
@@ -244,6 +246,7 @@ class DMFSplashScreen(QSplashScreen):
 
         self._pixmap = pixmap
         self.setPixmap(pixmap)
+        self.setFixedSize(W, H)
 
     def _on_progress_updated(self, value: int, message: str):
         """更新进度显示。"""

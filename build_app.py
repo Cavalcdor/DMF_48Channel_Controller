@@ -24,6 +24,7 @@ SPEC_FILE = ROOT / "dmf_controller.spec"
 ICON_FILE = BUILD_DIR / "icon.ico"
 VERSION_FILE = BUILD_DIR / "version_info.txt"
 DIST_EXE_DIR = DIST_DIR / "DMF_48Channel_Controller"
+DIST_EXE_FILE = DIST_DIR / "DMF_48Channel_Controller.exe"  # 单文件模式
 ISS_FILE = BUILD_DIR / "setup_installer.iss"
 
 
@@ -108,14 +109,14 @@ def step_pyinstaller():
         print(f"  ❌ PyInstaller 打包失败")
         sys.exit(1)
 
-    exe_path = DIST_EXE_DIR / "DMF_48Channel_Controller.exe"
+    exe_path = DIST_EXE_FILE if DIST_EXE_FILE.exists() else DIST_EXE_DIR / "DMF_48Channel_Controller.exe"
     if exe_path.exists():
         size_mb = exe_path.stat().st_size / (1024 * 1024)
         print(f"\n  ✓ 打包成功！")
         print(f"  📦 可执行文件: {exe_path}")
         print(f"  📏 文件大小: {size_mb:.1f} MB")
     else:
-        print(f"  ❌ 未找到输出文件: {exe_path}")
+        print(f"  ❌ 未找到输出文件: {DIST_EXE_FILE} 或 {DIST_EXE_DIR / 'DMF_48Channel_Controller.exe'}")
         sys.exit(1)
 
 
@@ -168,12 +169,12 @@ def step_summary():
     """步骤4: 构建总结。"""
     print_step("步骤4/4: 构建总结")
 
-    exe_path = DIST_EXE_DIR / "DMF_48Channel_Controller.exe"
+    exe_path = DIST_EXE_FILE if DIST_EXE_FILE.exists() else DIST_EXE_DIR / "DMF_48Channel_Controller.exe"
     setup_files = list(BUILD_DIR.glob("DMF_48Channel_Controller_Setup_*.exe"))
 
     print("  📂 输出目录结构：")
     print(f"     {ROOT}/")
-    print(f"     ├── dist/DMF_48Channel_Controller/")
+    print(f"     ├── dist/")
     if exe_path.exists():
         print(f"     │   └── DMF_48Channel_Controller.exe  ({exe_path.stat().st_size // 1024 // 1024} MB)")
 

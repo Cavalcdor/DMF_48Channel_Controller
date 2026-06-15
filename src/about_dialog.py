@@ -5,7 +5,7 @@ DMF 48通道控制器 — 关于对话框
 
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QApplication
+    QPushButton, QWidget, QApplication
 )
 from PyQt5.QtCore import Qt, QRect
 from PyQt5.QtGui import (

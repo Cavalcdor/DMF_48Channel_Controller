@@ -17,6 +17,9 @@ from src import global_cfg
 from src.serial_driver import SerialThread
 from src.grid_widget import ElectrodeGrid
 from src.path_algorithm import a_star_shortest_path, path_to_indices, plan_multiple_paths
+from src.splash_screen import SplashManager, VERSION, AUTHOR, YEAR
+from src.about_dialog import AboutDialog
+from src.auto_update import check_for_update
 
 
 class DMFControllerWindow(QMainWindow):
@@ -322,6 +325,47 @@ class DMFControllerWindow(QMainWindow):
         header_layout.addWidget(title_label)
 
         header_layout.addStretch()
+
+        # ---------- 菜单按钮 ----------
+        about_btn = QPushButton("关于")
+        about_btn.setStyleSheet("""
+            QPushButton {
+                color: #94a3b8;
+                background: transparent;
+                border: 1px solid #334155;
+                border-radius: 6px;
+                padding: 4px 14px;
+                font-size: 13px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                color: #e2e8f0;
+                border-color: #64748b;
+                background: rgba(255,255,255,0.05);
+            }
+        """)
+        about_btn.clicked.connect(lambda: AboutDialog(self).exec_())
+        header_layout.addWidget(about_btn)
+
+        update_btn = QPushButton("检查更新")
+        update_btn.setStyleSheet("""
+            QPushButton {
+                color: #94a3b8;
+                background: transparent;
+                border: 1px solid #334155;
+                border-radius: 6px;
+                padding: 4px 14px;
+                font-size: 13px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                color: #4fc3f7;
+                border-color: #4fc3f7;
+                background: rgba(79, 195, 247, 0.08);
+            }
+        """)
+        update_btn.clicked.connect(lambda: check_for_update(self, silent=False))
+        header_layout.addWidget(update_btn)
 
         self.header_status_label = QLabel("● 系统就绪")
         self.header_status_label.setStyleSheet("""
@@ -1254,14 +1298,38 @@ class DMFControllerWindow(QMainWindow):
 
 
 def main():
-    """主函数。"""
+    """主函数：显示欢迎界面 → 加载资源 → 启动主窗口。"""
     app = QApplication(sys.argv)
 
     # 设置应用样式
     app.setStyle('Fusion')
 
+    # ========== 欢迎启动界面 ==========
+    splash_mgr = SplashManager()
+    splash_mgr.show()
+
+    # 定义加载任务
+    loading_tasks = [
+        (10, "正在加载核心模块...", None),
+        (10, "正在初始化串口驱动...", None),
+        (15, "正在加载界面组件...", None),
+        (10, "正在初始化电极网格...", None),
+        (15, "正在加载路径算法...", None),
+        (10, "正在应用视觉样式...", None),
+        (15, "正在构建用户界面...", None),
+        (10, "正在准备系统资源...", None),
+        (5, "正在完成配置...", None),
+    ]
+
+    # 执行加载动画
+    splash_mgr.run_loading_sequence(loading_tasks)
+
+    # 创建主窗口
     window = DMFControllerWindow()
     window.show()
+
+    # 关闭启动画面
+    splash_mgr.close()
 
     sys.exit(app.exec_())
 

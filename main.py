@@ -48,6 +48,12 @@ class DMFControllerWindow(QMainWindow):
         self.move_timer = QTimer()
         self.move_timer.timeout.connect(self.move_droplet_step)
 
+        # ============ 通道测试相关 ============
+        self.test_running = False
+        self.test_channel_index = 0  # 当前测试的通道号
+        self.test_timer = QTimer()
+        self.test_timer.timeout.connect(self.test_channel_step)
+
         # ============ 连接串口信号 ============
         self.serial_thread.data_received.connect(self.on_serial_data)
         self.serial_thread.error.connect(self.on_serial_error)
@@ -574,13 +580,37 @@ class DMFControllerWindow(QMainWindow):
         # 快捷指令
         qr = QHBoxLayout()
         qr.setSpacing(6)
-        for label in ("ALL ON", "ALL OFF", "TEST", "LIST"):
+        for label in ("ALL ON", "ALL OFF", "LIST"):
             btn = QPushButton(label)
             btn.setFixedHeight(32)
             btn.setStyleSheet("font-weight:700;padding:0 8px;font-size:13px;")
             btn.clicked.connect(lambda checked, c=label: self.on_test_quick(c))
             qr.addWidget(btn, 1)
         sl.addLayout(qr)
+
+        # 通道测试（可调间隔）
+        test_row = QHBoxLayout()
+        test_row.setSpacing(6)
+        test_row.addWidget(QLabel("通道测试:"))
+        self.test_interval_spin = QSpinBox()
+        self.test_interval_spin.setRange(50, 5000)
+        self.test_interval_spin.setValue(500)
+        self.test_interval_spin.setSingleStep(500)
+        self.test_interval_spin.setFixedWidth(80)
+        test_row.addWidget(self.test_interval_spin)
+        test_row.addWidget(QLabel("ms"))
+        self.test_start_btn = QPushButton("开始测试")
+        self.test_start_btn.setObjectName("btn_run")
+        self.test_start_btn.setFixedHeight(30)
+        self.test_start_btn.clicked.connect(self.start_channel_test)
+        test_row.addWidget(self.test_start_btn, 1)
+        self.test_stop_btn = QPushButton("停止测试")
+        self.test_stop_btn.setObjectName("btn_stop")
+        self.test_stop_btn.setFixedHeight(30)
+        self.test_stop_btn.setEnabled(False)
+        self.test_stop_btn.clicked.connect(self.stop_channel_test)
+        test_row.addWidget(self.test_stop_btn, 1)
+        sl.addLayout(test_row)
 
         # ON/OFF 发送
         sr = QHBoxLayout()
@@ -794,11 +824,13 @@ class DMFControllerWindow(QMainWindow):
         delay_row = QHBoxLayout()
         delay_row.setSpacing(6)
         delay_row.addWidget(QLabel("执行间隔:"))
-        self.delay_spinbox = QComboBox()
-        self.delay_spinbox.addItems(["100", "200", "500", "1000"])
-        self.delay_spinbox.setCurrentText("500")
+        self.delay_spinbox = QSpinBox()
+        self.delay_spinbox.setRange(50, 5000)
+        self.delay_spinbox.setValue(500)
+        self.delay_spinbox.setSingleStep(500)
         self.delay_spinbox.setFixedWidth(80)
         delay_row.addWidget(self.delay_spinbox)
+        delay_row.addWidget(QLabel("ms"))
         delay_row.addWidget(QLabel("毫秒/步"))
         pl.addLayout(delay_row)
 
@@ -934,19 +966,29 @@ class DMFControllerWindow(QMainWindow):
                 return
             self.serial_thread.open_port(port)
         else:
-            self.serial_thread.close_port()
-            self.serial_connected = False
-            self.serial_status_label.setText("未连接")
-            self.serial_status_label.setStyleSheet("color: #dc2626; font-weight: 700;")
-            self.tb_status.setText("● 串口已断开")
-            self.tb_status.setStyleSheet("color:#dc2626;font-size:13px;font-weight:700;padding:4px 14px;border:1px solid #dc2626;border-radius:12px;background:#fef2f2;")
-            self.statusBar().showMessage("串口已断开连接")
+            self._disconnect_serial()
+
+    def _disconnect_serial(self):
+        """断开串口连接并恢复 UI 控件。"""
+        self.serial_thread.close_port()
+        self.serial_connected = False
+        self.connect_btn.setChecked(False)
+        self.connect_btn.setText("连接")
+        self.port_combo.setEnabled(True)
+        self.refresh_ports_btn.setEnabled(True)
+        self.serial_status_label.setText("未连接")
+        self.serial_status_label.setStyleSheet("color: #dc2626; font-weight: 700;")
+        self.tb_status.setText("● 串口已断开")
+        self.tb_status.setStyleSheet("color:#dc2626;font-size:13px;font-weight:700;padding:4px 14px;border:1px solid #dc2626;border-radius:12px;background:#fef2f2;")
+        self.statusBar().showMessage("串口已断开连接")
 
     @pyqtSlot(bool)
     def on_port_opened(self, success):
         """串口打开结果回调。"""
         if success:
             self.serial_connected = True
+            self.connect_btn.setText("断开")
+            self.connect_btn.setChecked(True)
             self.serial_status_label.setText(f"已连接 ({self.port_combo.currentText()})")
             self.serial_status_label.setStyleSheet("color: #16a34a; font-weight: 700;")
             self.tb_status.setText("● 串口已连接")
@@ -955,13 +997,9 @@ class DMFControllerWindow(QMainWindow):
             self.port_combo.setEnabled(False)
             self.refresh_ports_btn.setEnabled(False)
         else:
-            self.serial_connected = False
+            self._disconnect_serial()
             self.serial_status_label.setText("连接失败")
             self.serial_status_label.setStyleSheet("color: #ea580c; font-weight: 700;")
-            self.tb_status.setText("● 连接失败")
-            self.tb_status.setStyleSheet("color:#ea580c;font-size:13px;font-weight:700;padding:4px 14px;border:1px solid #ea580c;border-radius:12px;background:#fff7ed;")
-            self.statusBar().showMessage("串口连接失败")
-            self.connect_btn.setChecked(False)
 
     @pyqtSlot(str)
     def on_serial_data(self, data):
@@ -980,9 +1018,32 @@ class DMFControllerWindow(QMainWindow):
 
     @pyqtSlot(str)
     def on_serial_error(self, error_msg):
-        """处理串口错误。"""
+        """处理串口错误 — 自动断开并恢复 UI。"""
         self.statusBar().showMessage(f"错误：{error_msg}")
-        QMessageBox.critical(self, "串口错误", error_msg)
+
+        # 停止通道测试（如果正在运行）
+        if self.test_running:
+            self.test_timer.stop()
+            self.test_running = False
+            self.test_start_btn.setEnabled(True)
+            self.test_stop_btn.setEnabled(False)
+
+        # 停止路径执行（如果正在运行）
+        if self.is_running:
+            self.move_timer.stop()
+            self.is_running = False
+            self.run_path_btn.setEnabled(True)
+            self.stop_btn.setEnabled(False)
+            self.grid_widget.setEnabled(True)
+            self.current_path = []
+            self.droplet_plans = []
+            self.current_plan_index = 0
+
+        # 断开串口连接
+        self._disconnect_serial()
+        self.serial_status_label.setText("串口异常")
+        self.serial_status_label.setStyleSheet("color: #dc2626; font-weight: 700;")
+        self.log_panel.log_error(f"串口错误: {error_msg}")
 
     # ============ 液滴配置相关 ============
 
@@ -1187,6 +1248,86 @@ class DMFControllerWindow(QMainWindow):
         self.test_received_label.append(f">>> 发送: {text}")
         self.test_custom_input.clear()
 
+    # ============ 通道测试（可调间隔单步扫描） ============
+
+    @pyqtSlot()
+    def start_channel_test(self):
+        """启动通道测试：从通道0开始逐个打开/关闭，间隔可调。"""
+        if not self.serial_connected:
+            QMessageBox.warning(self, "警告", "串口未连接")
+            return
+
+        self.test_running = True
+        self.test_channel_index = 0
+        self.test_start_btn.setEnabled(False)
+        self.test_stop_btn.setEnabled(True)
+
+        # 先关闭所有通道
+        self.serial_thread.send_alloff()
+
+        delay = self.test_interval_spin.value()
+        self.test_timer.start(delay)
+
+        total = global_cfg.TOTAL_ELECTRODES
+        self.log_panel.log_info(f"通道测试启动：0~{total-1}，间隔 {delay}ms")
+        self.tb_status.setText(f"● 通道测试中 (0/{total})")
+        self.tb_status.setStyleSheet("color:#d97706;font-size:13px;font-weight:700;padding:4px 14px;border:1px solid #d97706;border-radius:12px;background:#fffbeb;")
+
+    @pyqtSlot()
+    def stop_channel_test(self):
+        """停止通道测试，关闭所有通道。"""
+        self.test_running = False
+        self.test_timer.stop()
+        self.test_start_btn.setEnabled(True)
+        self.test_stop_btn.setEnabled(False)
+
+        self.serial_thread.send_alloff()
+
+        self.tb_status.setText("● 测试已停止")
+        self.tb_status.setStyleSheet("color:#dc2626;font-size:13px;font-weight:700;padding:4px 14px;border:1px solid #dc2626;border-radius:12px;background:#fef2f2;")
+        self.log_panel.log_warn("通道测试已停止")
+
+    @pyqtSlot()
+    def test_channel_step(self):
+        """通道测试单步：关闭上一个通道，打开当前通道，步进到下一个。"""
+        if not self.test_running:
+            return
+
+        total = global_cfg.TOTAL_ELECTRODES
+
+        # 关闭上一个通道（回绕到最后一个时关闭最后一个）
+        if self.test_channel_index > 0:
+            prev = self.test_channel_index - 1
+            self.serial_thread.send_cmd(f"OFF,{prev}")
+
+        # 打开当前通道
+        self.serial_thread.send_cmd(f"ON,{self.test_channel_index}")
+
+        self.test_received_label.append(
+            f">>> 通道测试: 通道 {self.test_channel_index} ON")
+
+        # 步进到下一个通道
+        self.test_channel_index += 1
+
+        # 更新状态
+        self.tb_status.setText(f"● 通道测试中 ({self.test_channel_index}/{total})")
+        self.log_panel.log_info(
+            f"通道测试: 通道 {self.test_channel_index - 1} ON")
+
+        if self.test_channel_index >= total:
+            # 所有通道测试完成，自动停止
+            self.serial_thread.send_cmd(f"OFF,{total - 1}")
+            self.test_timer.stop()
+            self.test_running = False
+            self.test_start_btn.setEnabled(True)
+            self.test_stop_btn.setEnabled(False)
+            self.tb_status.setText("● 通道测试完成")
+            self.tb_status.setStyleSheet("color:#059669;font-size:13px;font-weight:700;padding:4px 14px;border:1px solid #059669;border-radius:12px;background:#ecfdf5;")
+            self.log_panel.log_success(
+                f"通道测试完成：已扫描 0~{total - 1} 共 {total} 个通道")
+            self.test_received_label.append(
+                f">>> 通道测试完成: 0~{total - 1}")
+
     def _start_next_droplet(self):
         """开始执行下一个液滴的路径。"""
         # 安全：如果定时器已在运行，先停止
@@ -1212,7 +1353,7 @@ class DMFControllerWindow(QMainWindow):
                 self.tb_status.setStyleSheet("color:#d97706;font-size:13px;font-weight:700;padding:4px 14px;border:1px solid #d97706;border-radius:12px;background:#fffbeb;")
 
                 # 启动定时器
-                delay_ms = int(self.delay_spinbox.currentText())
+                delay_ms = self.delay_spinbox.value()
                 self.move_timer.start(delay_ms)
                 return
             else:
@@ -1479,6 +1620,8 @@ class DMFControllerWindow(QMainWindow):
             self.serial_thread.close_port()
         if self.move_timer.isActive():
             self.move_timer.stop()
+        if self.test_timer.isActive():
+            self.test_timer.stop()
         event.accept()
 
 

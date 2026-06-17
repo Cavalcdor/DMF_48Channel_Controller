@@ -35,6 +35,7 @@ a = Analysis(
         'PyQt5.QtCore',
         'PyQt5.QtGui',
         'PyQt5.QtWidgets',
+        'PyQt5.QtMultimedia',
         'PyQt5.uic',
         # 项目模块
         'src.global_cfg',

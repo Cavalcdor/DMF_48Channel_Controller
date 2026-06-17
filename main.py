@@ -30,6 +30,16 @@ from src.settings import SettingsWidget
 from src.project_manager import ProjectManager
 
 
+def _resource_path(relative_path):
+    """获取资源文件的绝对路径（兼容 PyInstaller 打包模式）。"""
+    try:
+        # PyInstaller 打包后，资源在 sys._MEIPASS 目录
+        base = sys._MEIPASS
+    except AttributeError:
+        base = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base, relative_path)
+
+
 class DMFControllerWindow(QMainWindow):
     """DMF 48-通道控制器主窗口。"""
 
@@ -2004,6 +2014,7 @@ class DMFControllerWindow(QMainWindow):
         self.tb_status.setText("● 全部完成")
         self.tb_status.setStyleSheet("color:#308050;font-size:14px;font-weight:700;padding:4px 14px;border:1px solid #308050;background:#ecfdf5;")
         self.log_panel.log_success("所有液滴路径执行完成")
+        self._play_notification_sound()
 
     def _start_sync_execution(self):
         """同步模式：初始化所有液滴，全部置于起点。"""
@@ -2692,13 +2703,22 @@ class DMFControllerWindow(QMainWindow):
     # ── 通知音效 ──────────────────────────────────
 
     def _play_notification_sound(self):
-        """播放完成通知音效。"""
+        """播放完成通知音效（assets/notification.mp3）。"""
         if not self.sound_enabled:
             return
         try:
-            import winsound
-            winsound.Beep(880, 200)   # 高音
-            winsound.MessageBeep(winsound.MB_ICONASTERISK)
+            from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
+            from PyQt5.QtCore import QUrl
+
+            player = QMediaPlayer()
+            url = QUrl.fromLocalFile(_resource_path("assets/notification.mp3"))
+            player.setMedia(QMediaContent(url))
+            # 播放完毕自动清理
+            player.mediaStatusChanged.connect(
+                lambda status, p=player: p.deleteLater()
+                if status == QMediaPlayer.EndOfMedia else None
+            )
+            player.play()
         except Exception:
             QApplication.beep()
 

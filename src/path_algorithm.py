@@ -9,15 +9,18 @@ import heapq
 from . import global_cfg
 
 
-def a_star_shortest_path(start, target, obstacles=None):
+def a_star_shortest_path(start, target, obstacles=None, cell_costs=None):
     """使用 A* 算法找到从起点到目标的最短路径。
     
     采用曼哈顿距离启发式函数，完全匹配四方向移动约束。
+    支持 cell_costs 为特定格子增加移动代价，用于绕开已测点。
     
     Args:
         start: 起点 (row, col)
         target: 目标点 (row, col)
         obstacles: 障碍物集合，例如 {(1, 2), (3, 4)} 或 None
+        cell_costs: 格子额外代价字典 {(row, col): extra_cost}，默认 None。
+                    代价越高的格子路径越倾向于避开。
         
     Returns:
         path: 路径坐标列表 [(row0, col0), (row1, col1), ...] 包括起点和终点。
@@ -27,6 +30,8 @@ def a_star_shortest_path(start, target, obstacles=None):
         obstacles = set()
     else:
         obstacles = set(obstacles)
+    if cell_costs is None:
+        cell_costs = {}
 
     rows = global_cfg.ELECTRODE_ROWS
     cols = global_cfg.ELECTRODE_COLS
@@ -83,7 +88,9 @@ def a_star_shortest_path(start, target, obstacles=None):
             if neighbor in visited or neighbor in obstacles:
                 continue
 
-            tentative_g = g_score[current] + 1
+            # 基础移动代价1 + 额外代价（已测点增加权重，让路径绕开）
+            extra = cell_costs.get(neighbor, 0)
+            tentative_g = g_score[current] + 1 + extra
 
             if neighbor not in g_score or tentative_g < g_score[neighbor]:
                 parent[neighbor] = current
@@ -171,6 +178,16 @@ def plan_multiple_paths(pairs, obstacles=None, sort_by_length=True):
         obstacles = set(obstacles)
 
     used_cells = set(obstacles)
+    # 收集所有终点（支持融合场景：终点可被多个液滴共享）
+    all_targets = {target for _, target in pairs}
+    # 起点也不能互相占用
+    all_starts = {start for start, _ in pairs}
+    # 检测共享终点（融合液滴）
+    target_counts = {}
+    for _, tgt in pairs:
+        target_counts[tgt] = target_counts.get(tgt, 0) + 1
+    fusion_targets = {t for t, c in target_counts.items() if c > 1}
+
     results = []
 
     # 按曼哈顿距离排序（短路径优先），提高整体成功率
@@ -185,9 +202,20 @@ def plan_multiple_paths(pairs, obstacles=None, sort_by_length=True):
         path = a_star_shortest_path(start, target, used_cells)
 
         if path:
-            # 标记路径所有单元格为已占用（避免后续路径干涉）
-            for cell in path:
-                used_cells.add(cell)
+            if target in fusion_targets:
+                # 融合（共享终点）：不标记中间格子，让所有液滴都可到达
+                # 只阻挡其他液滴的起点
+                for cell in path:
+                    if cell in all_starts and cell != target:
+                        used_cells.add(cell)
+            else:
+                # 非融合：标记路径为已占用，排除其他液滴的终点（融合支持）
+                for cell in path:
+                    if cell in all_targets and cell != start:
+                        continue
+                    if cell in all_starts and cell != target:
+                        continue
+                    used_cells.add(cell)
             results.append({
                 'droplet_id': droplet_id + 1,
                 'start': start,
@@ -273,3 +301,74 @@ def multi_target_pathfinding(start, targets, obstacles=None):
         'distance': min_distance if min_distance != float('inf') else None,
         'all_paths': all_paths,
     }
+
+
+def generate_scan_path(rows, cols, start_row=0):
+    """生成蛇形扫描路径，覆盖网格上的所有单元格。
+    
+    用于芯片测试：引导液滴逐个走过每一个电极。
+    蛇形模式：(0,0)→(0,1)→...→(0,cols-1)→(1,cols-1)→(1,cols-2)→...
+    
+    Args:
+        rows: 行数
+        cols: 列数
+        start_row: 起始行（默认 0）
+        
+    Returns:
+        list[(row,col)]: 蛇形路径坐标列表
+    """
+    path = []
+    for r in range(start_row, rows):
+        if r % 2 == 0:
+            # 偶数行从左到右
+            for c in range(cols):
+                path.append((r, c))
+        else:
+            # 奇数行从右到左
+            for c in range(cols - 1, -1, -1):
+                path.append((r, c))
+    return path
+
+
+def reroute_around_obstacle(current_pos, remaining_path, obstacles,
+                            cell_costs=None):
+    """遇到障碍物时，从当前位置绕路到剩余路径中的下一个可达点。
+    
+    当液滴在芯片测试中遇到坏点（标记为障碍物）时，
+    使用 A* 从当前位置寻路到剩余路径中最近的可达点。
+    支持 cell_costs 避免经过已测点。
+    
+    Args:
+        current_pos: 当前位置 (row, col)
+        remaining_path: 剩余原始路径列表 [(row,col), ...] （不含当前位置）
+        obstacles: 障碍物/坏点集合
+        cell_costs: 格子额外代价字典 {(row, col): extra_cost}，默认 None。
+                    已测通过的电极其代价较高，以尽量避开。
+        
+    Returns:
+        dict:
+        - 'success': bool 是否找到绕路
+        - 'bypass_path': 绕路路径（含 current_pos 到目标点）
+        - 'target_index': 绕路目标在 remaining_path 中的索引，失败为 -1
+        - 'message': 状态描述
+    """
+    if not remaining_path:
+        return {'success': False, 'bypass_path': [], 'target_index': -1, 'message': '剩余路径为空'}
+    
+    # 尝试找到剩余路径中第一个可达的点
+    for i, target in enumerate(remaining_path):
+        if target in obstacles:
+            continue
+        path = a_star_shortest_path(current_pos, target, obstacles,
+                                    cell_costs=cell_costs)
+        if path:
+            # 找到了！返回绕路路径（不包含 current_pos 的第一个重复点）
+            bypass = path[1:]  # 跳过 current_pos 本身
+            return {
+                'success': True,
+                'bypass_path': bypass,
+                'target_index': i,
+                'message': f'已绕路到 ({target[0]},{target[1]})',
+            }
+    
+    return {'success': False, 'bypass_path': [], 'target_index': -1, 'message': '无可达绕路路径'}

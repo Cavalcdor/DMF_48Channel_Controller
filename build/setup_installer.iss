@@ -2,7 +2,7 @@
 ; 使用 Inno Setup 6 (https://jrsoftware.org/isinfo.php) 编译
 
 #define MyAppName "DMF 48通道控制器"
-#define MyAppVersion "2.2.3"
+#define MyAppVersion "3.0.0"
 #define MyAppPublisher "Charles WENG"
 #define MyAppURL "https://github.com/Cavalcdor/DMF_48Channel_Controller"
 #define MyAppExeName "DMF_48Channel_Controller.exe"

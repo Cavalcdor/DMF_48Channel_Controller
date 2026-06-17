@@ -75,6 +75,14 @@ class ElectrodeGrid(QWidget):
     # 信号：交互模式变化
     mode_changed = pyqtSignal(str)  # "sd" 或 "obstacle"
 
+    # 信号：撤销/重做状态变化
+    undo_state_changed = pyqtSignal(bool, bool)  # can_undo, can_redo
+
+    # 信号：途经点变化
+    waypoint_changed = pyqtSignal(int, int, bool)  # row, col, added
+    chip_test_cell_clicked = pyqtSignal(int, int)  # row, col （芯片测试模式点击网格）
+    chip_test_enter_pressed = pyqtSignal()         # Enter 键标记通过
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.rows = global_cfg.ELECTRODE_ROWS
@@ -87,10 +95,27 @@ class ElectrodeGrid(QWidget):
         self.cell_size = 110
         self.cell_margin = 8
         self.border_width = 1.5
-        self.border_radius = 8  # 圆角半径
+        self.border_radius = 1  # 圆角半径（学术风格，接近直角）
 
         # 显示的路径数据（用于路径可视化叠加）
         self.display_paths = []  # list[dict]: {'path': [(r,c),...], 'droplet_id': int, 'success': bool}
+
+        # ============ 执行高亮 ============
+        self.execution_highlight = None  # (row, col, droplet_id) 当前执行位置（逐个模式）
+        self.sync_highlights = []  # [(row, col, droplet_id), ...] 同步模式多液滴高亮
+        self.channel_test_highlight = None  # (row, col) 通道测试当前激活的电极
+
+        # ============ 芯片测试模式 ============
+        self.chip_test_active = False       # 芯片测试模式标志
+        self.cell_test_results = {}         # cell_index -> 'pass'/'fail'
+
+        # ============ 撤销/重做 ============
+        self._undo_history = []             # 状态快照列表
+        self._undo_index = -1               # 当前在历史中的位置
+
+        # ============ 途经点（路径微调） ============
+        self.waypoints = {}                 # droplet_id -> [(r,c), ...]
+        self.chip_test_current = -1         # 当前正在测试的 cell_index (-1=无)
 
         # ============ 液滴配对数据 ============
         self.current_droplet_id = 1          # 当前正在设置的液滴编号
@@ -100,6 +125,7 @@ class ElectrodeGrid(QWidget):
         # ============ 交互模式 ============
         self.mode = self.MODE_SD             # 默认：起点/终点设置模式
 
+        self.setFocusPolicy(Qt.StrongFocus)  # 接收键盘事件
         self.setStyleSheet("background-color: transparent;")
         self.setMinimumSize(200, 150)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -228,7 +254,14 @@ class ElectrodeGrid(QWidget):
             pos = event.pos()
             cell = self._get_cell_from_pos(pos.x(), pos.y())
             if cell:
+                # 保存快照用于撤销
+                self.save_snapshot()
                 row, col = cell
+
+                # 芯片测试模式：点击电极即选中（不修改网格状态）
+                if self.chip_test_active:
+                    self.chip_test_cell_clicked.emit(row, col)
+                    return
 
                 if self.mode == self.MODE_OBSTACLE:
                     # 障碍物模式：Idle ↔ Obstacle 切换
@@ -241,6 +274,7 @@ class ElectrodeGrid(QWidget):
                     self.update()
                 elif self.mode == self.MODE_SD:
                     # 智能模式：点空闲格自动设为起点/终点，点已设格取消
+                    # 支持液滴融合：多个液滴可共享同一终点
                     did = self.current_droplet_id
 
                     # 点击自己的起点 → 取消
@@ -250,12 +284,35 @@ class ElectrodeGrid(QWidget):
                     # 点击自己的终点 → 取消
                     elif did in self.droplet_targets and (row, col) == self.droplet_targets[did]:
                         del self.droplet_targets[did]
-                        self.grid[row][col] = self.STATE_IDLE
-                    # 点击别人的起点/终点 → 忽略
-                    elif self.grid[row][col] != self.STATE_IDLE:
+                        # 检查是否有其他液滴也以此为目标，若无则恢复 Idle
+                        other_targeting = any(
+                            (r, c) == (row, col) for d, (r, c) in self.droplet_targets.items() if d != did
+                        )
+                        if not other_targeting:
+                            self.grid[row][col] = self.STATE_IDLE
+                    # 点击别人的起点 → 忽略
+                    elif self.grid[row][col] == self.STATE_START:
                         return
+                    # 点击别人的终点 → 融合：允许共享此终点
+                    elif self.grid[row][col] == self.STATE_TARGET:
+                        # 检查是否有液滴已以此为目标
+                        existing = [d for d, (r, c) in self.droplet_targets.items()
+                                    if (r, c) == (row, col) and d != did]
+                        if existing:
+                            # 已有其他液滴以此为目标——融合场景
+                            if did in self.droplet_targets:
+                                old_r, old_c = self.droplet_targets[did]
+                                # 如果就目标不同且不被其他液滴使用，恢复空闲
+                                if (old_r, old_c) != (row, col):
+                                    other_on_old = any(
+                                        (r, c) == (old_r, old_c) for d, (r, c) in self.droplet_targets.items() if d != did
+                                    )
+                                    if not other_on_old:
+                                        self.grid[old_r][old_c] = self.STATE_IDLE
+                            self.droplet_targets[did] = (row, col)
+                            # 保持 TARGET 状态不变
                     # 空闲格子 → 自动设为起点或终点
-                    else:
+                    elif self.grid[row][col] == self.STATE_IDLE:
                         if did not in self.droplet_starts:
                             # 还没有起点 → 设为起点
                             self.droplet_starts[did] = (row, col)
@@ -264,7 +321,13 @@ class ElectrodeGrid(QWidget):
                             # 已有起点 → 设为目标（覆盖旧目标）
                             if did in self.droplet_targets:
                                 r, c = self.droplet_targets[did]
-                                self.grid[r][c] = self.STATE_IDLE
+                                # 仅当其他液滴不使用该格子时才恢复 Idle
+                                other_on_old = any(
+                                    (rr, cc) == (r, c) for d2, (rr, cc) in self.droplet_targets.items() if d2 != did
+                                )
+                                if not other_on_old:
+                                    self.grid[r][c] = self.STATE_IDLE
+                                # 如果其他液滴也用此为目标，不改变网格状态
                             self.droplet_targets[did] = (row, col)
                             self.grid[row][col] = self.STATE_TARGET
                     self.display_paths = []
@@ -272,13 +335,82 @@ class ElectrodeGrid(QWidget):
                     self.droplet_config_changed.emit()
                     self.update()
 
+        elif event.button() == Qt.RightButton:
+            """右键：在当前液滴的路径上添加/移除途经点。"""
+            pos = event.pos()
+            cell = self._get_cell_from_pos(pos.x(), pos.y())
+            if cell and self.display_paths:
+                self.save_snapshot()
+                row, col = cell
+                # 只允许在空闲格子上设途经点
+                if self.grid[row][col] == self.STATE_IDLE:
+                    added = self.toggle_waypoint(row, col)
+                    self.waypoint_changed.emit(row, col, added)
+                    self.droplet_config_changed.emit()
+                    self.update()
+
+    def keyPressEvent(self, event):
+        """键盘方向键 / WASD 在芯片测试模式下移动当前选中的电极。"""
+        if not self.chip_test_active or self.chip_test_current < 0:
+            super().keyPressEvent(event)
+            return
+
+        # 当前选中位置
+        cur_row = self.chip_test_current // self.cols
+        cur_col = self.chip_test_current % self.cols
+
+        # Enter/Return → 标记通过
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            self.chip_test_enter_pressed.emit()
+            return
+
+        delta = None
+
+        if event.key() in (Qt.Key_Up, Qt.Key_W):
+            delta = (-1, 0)
+        elif event.key() in (Qt.Key_Down, Qt.Key_S):
+            delta = (1, 0)
+        elif event.key() in (Qt.Key_Left, Qt.Key_A):
+            delta = (0, -1)
+        elif event.key() in (Qt.Key_Right, Qt.Key_D):
+            delta = (0, 1)
+
+        if delta is None:
+            super().keyPressEvent(event)
+            return
+
+        dr, dc = delta
+        new_row = cur_row + dr
+        new_col = cur_col + dc
+
+        # 边界检查
+        if 0 <= new_row < self.rows and 0 <= new_col < self.cols:
+            self.chip_test_cell_clicked.emit(new_row, new_col)
+
     def _build_cell_labels(self):
-        """构建单元格标签映射：{(row, col): 'S1'|'T2'|...}"""
+        """构建单元格标签映射：{(row, col): 'S1'|'T1,2'|...}
+        
+        支持液滴融合：同一终点上多个液滴显示为 T1,2,3
+        """
         labels = {}
         for did, (r, c) in self.droplet_starts.items():
             labels[(r, c)] = f"S{did}"
+        # 收集每个终点上的所有液滴编号
+        target_groups = {}  # (r,c) -> [did1, did2, ...]
         for did, (r, c) in self.droplet_targets.items():
-            labels[(r, c)] = f"T{did}"
+            if (r, c) not in target_groups:
+                target_groups[(r, c)] = []
+            target_groups[(r, c)].append(did)
+        for (r, c), dids in target_groups.items():
+            if len(dids) == 1:
+                labels[(r, c)] = f"T{dids[0]}"
+            elif len(dids) == 2:
+                labels[(r, c)] = f"T{dids[0]},{dids[1]}"
+            else:
+                # 3 个及以上显示为 T1+2（表示 T1 和另外 2 个液滴）
+                first = min(dids)
+                rest = len(dids) - 1
+                labels[(r, c)] = f"T{first}+{rest}"
         return labels
 
     def paintEvent(self, event):
@@ -291,6 +423,13 @@ class ElectrodeGrid(QWidget):
         cell_labels = self._build_cell_labels()
 
         # ============ 第一层：绘制网格单元格 ============
+        # 收集路径覆盖的格子，用于避免坐标文字被半透明路径盖住后透出
+        path_cells = set()
+        for pd in self.display_paths:
+            if pd.get('success', False):
+                for coord in pd.get('path', []):
+                    path_cells.add(tuple(coord))
+
         for row in range(self.rows):
             for col in range(self.cols):
                 rect = self._get_cell_rect(row, col)
@@ -316,17 +455,24 @@ class ElectrodeGrid(QWidget):
                 painter.setPen(pen)
                 painter.drawPath(path)
 
-                # 如果是 Start/Target 且有液滴标记，显示 S{id}/T{id}
+                # 如果是 Start/Target 且有液滴标记，显示 S{id}/T{id}/T1,2,3
                 label = cell_labels.get((row, col))
                 if label and state in (self.STATE_START, self.STATE_TARGET):
-                    did = int(label[1:])
-                    color_index = (did - 1) % len(self.PATH_BORDER_COLORS)
+                    # 取第一个液滴编号来确定颜色（融合时用第一个液滴的颜色）
+                    parts = label[1:].split(",")
+                    try:
+                        first_did = int(parts[0])
+                    except ValueError:
+                        first_did = 1
+                    color_index = (first_did - 1) % len(self.PATH_BORDER_COLORS)
                     painter.setPen(self.PATH_BORDER_COLORS[color_index])
                     fs = max(10, self.cell_size // 5)
                     painter.setFont(QFont("Arial", fs, QFont.Bold))
                     painter.drawText(rect, Qt.AlignCenter, label)
                 else:
-                    text = f"({row},{col})" if state != self.STATE_OBSTACLE else ""
+                    # 如果该格子被路径覆盖，不再显示 (row,col) 防止半透明透出
+                    in_path = (row, col) in path_cells
+                    text = "" if in_path else (f"({row},{col})" if state != self.STATE_OBSTACLE else "")
                     text_color = QColor(255, 255, 255) if state == self.STATE_OBSTACLE else QColor(71, 85, 105)
                     painter.setPen(text_color)
                     fs = max(8, self.cell_size // 8)
@@ -334,101 +480,450 @@ class ElectrodeGrid(QWidget):
                     painter.drawText(rect, Qt.AlignCenter, text)
 
         # ============ 第二层：叠加绘制路径 ============
-        if not self.display_paths:
-            return
+        if self.display_paths:
+            for path_data in self.display_paths:
+                path_coords = path_data.get('path', [])
+                if not path_coords or not path_data.get('success', False):
+                    continue
 
-        for path_data in self.display_paths:
-            path_coords = path_data.get('path', [])
-            if not path_coords or not path_data.get('success', False):
-                continue
+                droplet_id = path_data.get('droplet_id', 1)
+                color_index = (droplet_id - 1) % len(self.PATH_COLORS)
+                overlay_color = self.PATH_COLORS[color_index]
+                border_color = self.PATH_BORDER_COLORS[color_index]
 
-            droplet_id = path_data.get('droplet_id', 1)
-            color_index = (droplet_id - 1) % len(self.PATH_COLORS)
-            overlay_color = self.PATH_COLORS[color_index]
-            border_color = self.PATH_BORDER_COLORS[color_index]
+                # 绘制路径单元格（半透明叠加）
+                for step, (row, col) in enumerate(path_coords):
+                    rect = self._get_cell_rect(row, col)
+                    rect_f = QRectF(rect)
 
-            # 绘制路径单元格（半透明叠加）
-            for step, (row, col) in enumerate(path_coords):
-                rect = self._get_cell_rect(row, col)
+                    cell_path = QPainterPath()
+                    cell_path.addRoundedRect(rect_f, self.border_radius, self.border_radius)
+
+                    # 半透明填充
+                    painter.fillPath(cell_path, overlay_color)
+
+                    # 路径边框（带颜色，加粗）
+                    pen = QPen(border_color, 3.0)
+                    pen.setCapStyle(Qt.RoundCap)
+                    pen.setJoinStyle(Qt.RoundJoin)
+                    painter.setPen(pen)
+                    painter.drawPath(cell_path)
+
+                    # 路径步骤编号（仅当 show_step_numbers 为 True 时显示）
+                    if path_data.get('show_step_numbers', True):
+                        painter.setPen(border_color)
+                        fs = max(10, self.cell_size // 6)
+                        font = QFont("Arial", fs, QFont.Bold)
+                        painter.setFont(font)
+                        step_text = str(step + 1)
+
+                        # 特殊标记：起点 S / 目标 T
+                        if step == 0:
+                            marker = f"S{droplet_id}"
+                        elif step == len(path_coords) - 1:
+                            marker = f"T{droplet_id}"
+                        else:
+                            marker = step_text
+
+                        painter.drawText(rect, Qt.AlignCenter, marker)
+
+                # 绘制路径连线（相邻单元格之间的箭头）
+                painter.setPen(QPen(border_color, 3, Qt.SolidLine))
+                for i in range(len(path_coords) - 1):
+                    r1, c1 = path_coords[i]
+                    r2, c2 = path_coords[i + 1]
+                    rect1 = self._get_cell_rect(r1, c1)
+                    rect2 = self._get_cell_rect(r2, c2)
+
+                    # 从当前单元格中心到下一个单元格中心
+                    x1 = rect1.center().x()
+                    y1 = rect1.center().y()
+                    x2 = rect2.center().x()
+                    y2 = rect2.center().y()
+
+                    # 缩进一点（从边缘而不是中心），避免覆盖文字
+                    margin = self.cell_size // 2 - 8
+                    dx = x2 - x1
+                    dy = y2 - y1
+                    length = (dx ** 2 + dy ** 2) ** 0.5
+                    if length > 0:
+                        x1 = x1 + dx / length * (self.cell_size // 2 - margin)
+                        y1 = y1 + dy / length * (self.cell_size // 2 - margin)
+                        x2 = x2 - dx / length * (self.cell_size // 2 - margin)
+                        y2 = y2 - dy / length * (self.cell_size // 2 - margin)
+
+                    # 画连线
+                    painter.drawLine(int(x1), int(y1), int(x2), int(y2))
+
+                    # 画箭头（在连线中点附近）
+                    mid_x = (x1 + x2) / 2
+                    mid_y = (y1 + y2) / 2
+                    arrow_size = 10
+                    angle = math.atan2(dy, dx)
+
+                    # 箭头三角形
+                    arrow_p1 = (mid_x, mid_y)
+                    arrow_p2 = (mid_x - arrow_size * math.cos(angle - 0.5),
+                                mid_y - arrow_size * math.sin(angle - 0.5))
+                    arrow_p3 = (mid_x - arrow_size * math.cos(angle + 0.5),
+                                mid_y - arrow_size * math.sin(angle + 0.5))
+
+                    arrow_path = QPainterPath()
+                    arrow_path.moveTo(arrow_p1[0], arrow_p1[1])
+                    arrow_path.lineTo(arrow_p2[0], arrow_p2[1])
+                    arrow_path.lineTo(arrow_p3[0], arrow_p3[1])
+                    arrow_path.closeSubpath()
+                    painter.fillPath(arrow_path, QBrush(border_color))
+
+        # ============ 第三层：执行高亮（当前激活的电极位置，整个填充） ============
+        # 优先使用同步高亮列表（多液滴），否则使用单液滴高亮
+        if self.sync_highlights:
+            for sr, sc, sdid in self.sync_highlights:
+                rect = self._get_cell_rect(sr, sc)
                 rect_f = QRectF(rect)
 
-                cell_path = QPainterPath()
-                cell_path.addRoundedRect(rect_f, self.border_radius, self.border_radius)
+                # 不透明绿色填充整个格子
+                painter.setBrush(QColor(0, 200, 83, 255))
+                painter.setPen(Qt.NoPen)
+                hl_path = QPainterPath()
+                hl_path.addRoundedRect(QRectF(rect_f.adjusted(-1, -1, 1, 1)),
+                                       self.border_radius, self.border_radius)
+                painter.drawPath(hl_path)
 
-                # 半透明填充
-                painter.fillPath(cell_path, overlay_color)
+                # 深绿色边框
+                highlight_pen = QPen(QColor(0, 150, 60), 3.0)
+                highlight_pen.setCapStyle(Qt.RoundCap)
+                highlight_pen.setJoinStyle(Qt.RoundJoin)
+                painter.setPen(highlight_pen)
+                painter.setBrush(Qt.NoBrush)
+                painter.drawPath(hl_path)
 
-                # 路径边框（带颜色，加粗）
-                pen = QPen(border_color, 3.0)
-                pen.setCapStyle(Qt.RoundCap)
-                pen.setJoinStyle(Qt.RoundJoin)
-                painter.setPen(pen)
-                painter.drawPath(cell_path)
+                # 白色标注液滴编号
+                painter.setPen(Qt.white)
+                fs = max(16, self.cell_size // 3)
+                painter.setFont(QFont("Arial", fs, QFont.Bold))
+                painter.drawText(rect, Qt.AlignCenter, f"▶{sdid}")
+        elif self.execution_highlight is not None:
+            er, ec, edid = self.execution_highlight
+            rect = self._get_cell_rect(er, ec)
+            rect_f = QRectF(rect)
 
-                # 路径步骤编号
-                painter.setPen(border_color)
-                fs = max(10, self.cell_size // 6)
-                font = QFont("Arial", fs, QFont.Bold)
-                painter.setFont(font)
-                step_text = str(step + 1)
+            # 不透明绿色填充整个格子
+            painter.setBrush(QColor(0, 200, 83, 255))
+            painter.setPen(Qt.NoPen)
+            hl_path = QPainterPath()
+            hl_path.addRoundedRect(QRectF(rect_f.adjusted(-1, -1, 1, 1)),
+                                   self.border_radius, self.border_radius)
+            painter.drawPath(hl_path)
 
-                # 特殊标记：起点 S / 目标 T
-                if step == 0:
-                    marker = f"S{droplet_id}"
-                elif step == len(path_coords) - 1:
-                    marker = f"T{droplet_id}"
-                else:
-                    marker = step_text
+            # 深绿色边框
+            highlight_pen = QPen(QColor(0, 150, 60), 3.0)
+            highlight_pen.setCapStyle(Qt.RoundCap)
+            highlight_pen.setJoinStyle(Qt.RoundJoin)
+            painter.setPen(highlight_pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawPath(hl_path)
 
-                painter.drawText(rect, Qt.AlignCenter, marker)
+            # 白色标注液滴编号
+            painter.setPen(Qt.white)
+            fs = max(16, self.cell_size // 3)
+            painter.setFont(QFont("Arial", fs, QFont.Bold))
+            painter.drawText(rect, Qt.AlignCenter, f"▶{edid}")
 
-            # 绘制路径连线（相邻单元格之间的箭头）
-            painter.setPen(QPen(border_color, 3, Qt.SolidLine))
-            for i in range(len(path_coords) - 1):
-                r1, c1 = path_coords[i]
-                r2, c2 = path_coords[i + 1]
-                rect1 = self._get_cell_rect(r1, c1)
-                rect2 = self._get_cell_rect(r2, c2)
+        # ============ 第 3.2 层：通道测试高亮（当前 ON 的测试电极） ============
+        if self.channel_test_highlight is not None:
+            tr, tc = self.channel_test_highlight
+            rect = self._get_cell_rect(tr, tc)
+            rect_f = QRectF(rect)
 
-                # 从当前单元格中心到下一个单元格中心
-                x1 = rect1.center().x()
-                y1 = rect1.center().y()
-                x2 = rect2.center().x()
-                y2 = rect2.center().y()
+            # 绘制橙黄色粗边框
+            test_pen = QPen(QColor(255, 160, 0), 4.0)
+            test_pen.setCapStyle(Qt.RoundCap)
+            test_pen.setJoinStyle(Qt.RoundJoin)
+            painter.setPen(test_pen)
+            tp_path = QPainterPath()
+            tp_path.addRoundedRect(QRectF(rect_f.adjusted(-1, -1, 1, 1)),
+                                   self.border_radius, self.border_radius)
+            painter.drawPath(tp_path)
 
-                # 缩进一点（从边缘而不是中心），避免覆盖文字
-                margin = self.cell_size // 2 - 8
-                dx = x2 - x1
-                dy = y2 - y1
-                length = (dx ** 2 + dy ** 2) ** 0.5
-                if length > 0:
-                    x1 = x1 + dx / length * (self.cell_size // 2 - margin)
-                    y1 = y1 + dy / length * (self.cell_size // 2 - margin)
-                    x2 = x2 - dx / length * (self.cell_size // 2 - margin)
-                    y2 = y2 - dy / length * (self.cell_size // 2 - margin)
+            # 在角落标注 T 标记
+            painter.setPen(QColor(255, 160, 0))
+            fs = max(12, self.cell_size // 5)
+            painter.setFont(QFont("Arial", fs, QFont.Bold))
+            painter.drawText(rect, Qt.AlignCenter, "T")
 
-                # 画连线
-                painter.drawLine(int(x1), int(y1), int(x2), int(y2))
+        # ============ 第 3.5 层：途经点标记（路径微调） ============
+        if self.display_paths and any(self.waypoints.values()):
+            for did, wps in self.waypoints.items():
+                if not wps:
+                    continue
+                color_idx = (did - 1) % len(self.PATH_BORDER_COLORS)
+                mark_color = self.PATH_BORDER_COLORS[color_idx]
+                for r, c in wps:
+                    rect = self._get_cell_rect(r, c)
+                    # 菱形标记
+                    cx, cy = rect.center().x(), rect.center().y()
+                    hw, hh = 14, 14
+                    diamond = QPainterPath()
+                    diamond.moveTo(cx, cy - hh)
+                    diamond.lineTo(cx + hw, cy)
+                    diamond.lineTo(cx, cy + hh)
+                    diamond.lineTo(cx - hw, cy)
+                    diamond.closeSubpath()
+                    painter.fillPath(diamond, QBrush(mark_color))
+                    painter.setPen(QPen(QColor(255, 255, 255), 2))
+                    painter.drawLine(cx - 4, cy, cx + 4, cy)
+                    painter.drawLine(cx, cy - 4, cx, cy + 4)
 
-                # 画箭头（在连线中点附近）
-                mid_x = (x1 + x2) / 2
-                mid_y = (y1 + y2) / 2
-                arrow_size = 10
-                angle = math.atan2(dy, dx)
+        # ============ 第四层：芯片测试模式叠加 ============
+        if self.chip_test_active:
+            for row in range(self.rows):
+                for col in range(self.cols):
+                    idx = row * self.cols + col
+                    if idx not in self.cell_test_results:
+                        continue
+                    rect = self._get_cell_rect(row, col)
+                    rect_f = QRectF(rect)
+                    result = self.cell_test_results[idx]
+                    if result == 'pass':
+                        # 半透明绿色覆盖 + ✓
+                        overlay = QColor(0, 180, 80, 50)
+                        painter.fillRect(rect_f, overlay)
+                        painter.setPen(QColor(0, 140, 60))
+                        fs = max(14, self.cell_size // 4)
+                        painter.setFont(QFont("Arial", fs, QFont.Bold))
+                        painter.drawText(rect, Qt.AlignCenter, "✓")
+                    elif result == 'fail':
+                        # 半透明红色覆盖 + ✗
+                        overlay = QColor(200, 40, 40, 50)
+                        painter.fillRect(rect_f, overlay)
+                        painter.setPen(QColor(180, 0, 0))
+                        fs = max(14, self.cell_size // 4)
+                        painter.setFont(QFont("Arial", fs, QFont.Bold))
+                        painter.drawText(rect, Qt.AlignCenter, "✗")
 
-                # 箭头三角形
-                arrow_p1 = (mid_x, mid_y)
-                arrow_p2 = (mid_x - arrow_size * math.cos(angle - 0.5),
-                            mid_y - arrow_size * math.sin(angle - 0.5))
-                arrow_p3 = (mid_x - arrow_size * math.cos(angle + 0.5),
-                            mid_y - arrow_size * math.sin(angle + 0.5))
+            # 当前测试中的电极 — 蓝色脉冲边框
+            if self.chip_test_current >= 0:
+                cr = self.chip_test_current // self.cols
+                cc = self.chip_test_current % self.cols
+                if 0 <= cr < self.rows and 0 <= cc < self.cols:
+                    rect = self._get_cell_rect(cr, cc)
+                    rect_f = QRectF(rect)
+                    test_pen = QPen(QColor(40, 100, 220), 4.0)
+                    test_pen.setCapStyle(Qt.RoundCap)
+                    test_pen.setJoinStyle(Qt.RoundJoin)
+                    painter.setPen(test_pen)
+                    tp = QPainterPath()
+                    tp.addRoundedRect(QRectF(rect_f.adjusted(-1, -1, 1, 1)),
+                                      self.border_radius, self.border_radius)
+                    painter.drawPath(tp)
 
-                arrow_path = QPainterPath()
-                arrow_path.moveTo(arrow_p1[0], arrow_p1[1])
-                arrow_path.lineTo(arrow_p2[0], arrow_p2[1])
-                arrow_path.lineTo(arrow_p3[0], arrow_p3[1])
-                arrow_path.closeSubpath()
-                painter.fillPath(arrow_path, QBrush(border_color))
+
+    # ── 撤销/重做 ──────────────────────────────────
+
+    def _grid_state(self):
+        """返回当前网格状态的快照（用于撤销/重做）。"""
+        return {
+            'grid': [row[:] for row in self.grid],
+            'starts': dict(self.droplet_starts),
+            'targets': dict(self.droplet_targets),
+            'waypoints': {d: list(wps) for d, wps in self.waypoints.items()},
+            'paths': list(self.display_paths),
+        }
+
+    def _restore_grid_state(self, state):
+        """从快照恢复网格状态。"""
+        self.grid = [row[:] for row in state['grid']]
+        self.droplet_starts = dict(state['starts'])
+        self.droplet_targets = dict(state['targets'])
+        self.waypoints = {int(d): list(wps) for d, wps in state['waypoints'].items()}
+        self.display_paths = list(state['paths'])
+        self.droplet_config_changed.emit()
+        self.update()
+
+    def save_snapshot(self):
+        """保存当前状态快照（操作前调用）。"""
+        # 丢弃当前位置之后的任何重做历史
+        self._undo_history = self._undo_history[:self._undo_index + 1]
+        state = self._grid_state()
+        self._undo_history.append(state)
+        # 限制历史深度
+        if len(self._undo_history) > 100:
+            self._undo_history.pop(0)
+        self._undo_index = len(self._undo_history) - 1
+        self.undo_state_changed.emit(self.can_undo(), self.can_redo())
+
+    def undo(self):
+        """撤销上一步操作。返回 True 如果撤销成功。"""
+        if self._undo_index <= 0:
+            return False
+        self._undo_index -= 1
+        self._restore_grid_state(self._undo_history[self._undo_index])
+        return True
+
+    def redo(self):
+        """重做被撤销的操作。返回 True 如果重做成功。"""
+        if self._undo_index >= len(self._undo_history) - 1:
+            return False
+        self._undo_index += 1
+        self._restore_grid_state(self._undo_history[self._undo_index])
+        return True
+
+    def can_undo(self):
+        return self._undo_index > 0
+
+    def can_redo(self):
+        return self._undo_index < len(self._undo_history) - 1
+
+    # ── 途经点（路径微调） ────────────────────────────
+
+    def toggle_waypoint(self, row, col, droplet_id=None):
+        """切换一个途经点标记。
+        
+        Args:
+            row, col: 网格坐标
+            droplet_id: 液滴编号，默认当前液滴
+        """
+        did = droplet_id if droplet_id is not None else self.current_droplet_id
+        if did not in self.waypoints:
+            self.waypoints[did] = []
+        pos = (row, col)
+        if pos in self.waypoints[did]:
+            self.waypoints[did].remove(pos)
+            return False  # 已移除
+        else:
+            self.waypoints[did].append(pos)
+            return True   # 已添加
+
+    def clear_waypoints(self, droplet_id=None):
+        """清除途经点。"""
+        if droplet_id is None:
+            self.waypoints.clear()
+        else:
+            self.waypoints.pop(droplet_id, None)
+        self.update()
+
+    def has_waypoints(self, droplet_id=None):
+        """检查是否有途经点。"""
+        if droplet_id is None:
+            return any(len(wps) > 0 for wps in self.waypoints.values())
+        return bool(self.waypoints.get(droplet_id))
+
+    def get_waypoints(self, droplet_id):
+        """获取指定液滴的途经点列表。"""
+        return list(self.waypoints.get(droplet_id, []))
+
+    # ── 执行高亮 ──────────────────────────────────
+
+    def set_execution_highlight(self, droplet_id, path, current_step):
+        """设置执行高亮：标记当前执行到路径的哪一步。
+        
+        Args:
+            droplet_id: 液滴编号
+            path: 完整路径坐标列表
+            current_step: 当前步索引（0-based）
+        """
+        if current_step < len(path):
+            self.execution_highlight = (path[current_step][0], path[current_step][1], droplet_id)
+        else:
+            self.execution_highlight = None
+        self.update()
+
+    def clear_execution_highlight(self):
+        """清除执行高亮。"""
+        self.execution_highlight = None
+        self.sync_highlights = []
+        self.update()
+
+    # ── 同步推进高亮 ─────────────────────────────────
+
+    def set_sync_highlights(self, highlights):
+        """设置同步推进高亮：多个液滴同时高亮。
+
+        Args:
+            highlights: list of (row, col, droplet_id)
+        """
+        self.sync_highlights = list(highlights)
+        self.update()
+
+    def clear_sync_highlights(self):
+        """清除同步推进高亮。"""
+        self.sync_highlights = []
+        self.update()
+
+    # ── 通道测试高亮 ──────────────────────────────────
+
+    def set_channel_test_highlight(self, cell_index):
+        """设置通道测试高亮：标记当前正在测试的电极。
+
+        Args:
+            cell_index: 电极编号 (0-based)，-1 清除高亮
+        """
+        if cell_index < 0:
+            self.channel_test_highlight = None
+        else:
+            r = cell_index // self.cols
+            c = cell_index % self.cols
+            self.channel_test_highlight = (r, c)
+        self.update()
+
+    def clear_channel_test_highlight(self):
+        """清除通道测试高亮。"""
+        self.channel_test_highlight = None
+        self.update()
+
+    # ── 芯片测试模式 ──────────────────────────────────
+
+    def set_chip_test_mode(self, active):
+        """启用/禁用芯片测试模式。
+
+        Args:
+            active: True 进入测试模式，False 退出
+        """
+        self.chip_test_active = active
+        if not active:
+            self.chip_test_current = -1
+            # 不清理 cell_test_results，留给外部按需清理（如 on_chip_test_start）
+        self.update()
+
+    def set_cell_test_result(self, index, result):
+        """设置某个电极的测试结果。
+
+        Args:
+            index: 电极编号 (0-based)
+            result: 'pass' 通过 | 'fail' 坏点 | None 清除
+        """
+        if result is None:
+            self.cell_test_results.pop(index, None)
+        else:
+            self.cell_test_results[index] = result
+        self.update()
+
+    def clear_test_results(self):
+        """清除所有测试结果。"""
+        self.cell_test_results.clear()
+        self.chip_test_current = -1
+        self.update()
+
+    def set_chip_test_current(self, index):
+        """设置当前正在测试的电极编号。
+
+        Args:
+            index: 电极编号 (0-based)，-1 表示无
+        """
+        self.chip_test_current = index
+        self.update()
+
+    def get_test_summary(self):
+        """获取测试结果统计。
+
+        Returns:
+            (pass_count, fail_count, fail_list)
+        """
+        pass_c = sum(1 for v in self.cell_test_results.values() if v == 'pass')
+        fail_c = sum(1 for v in self.cell_test_results.values() if v == 'fail')
+        fail_list = sorted(i for i, v in self.cell_test_results.items() if v == 'fail')
+        return pass_c, fail_c, fail_list
 
     def set_paths(self, paths_data):
         """设置要叠加显示的路径。
@@ -455,8 +950,18 @@ class ElectrodeGrid(QWidget):
         self.display_paths = []
         self.droplet_starts.clear()
         self.droplet_targets.clear()
+        self.execution_highlight = None
+        self.sync_highlights = []
+        self.channel_test_highlight = None
+        self.chip_test_active = False
+        self.cell_test_results.clear()
+        self.chip_test_current = -1
+        self.waypoints.clear()
+        self._undo_history.clear()
+        self._undo_index = -1
         self._recalc_cell_size()
         self.droplet_config_changed.emit()
+        self.undo_state_changed.emit(self.can_undo(), self.can_redo())
         self.update()
 
     def _recalc_cell_size(self):
@@ -482,6 +987,7 @@ class ElectrodeGrid(QWidget):
         self.display_paths = []
         self.droplet_starts.clear()
         self.droplet_targets.clear()
+        self.waypoints.clear()
         for row in range(self.rows):
             for col in range(self.cols):
                 self.grid[row][col] = self.STATE_IDLE
@@ -501,6 +1007,7 @@ class ElectrodeGrid(QWidget):
 
     def clear_state(self, state):
         """清除指定状态的所有单元格，同时清除路径显示。"""
+        self.save_snapshot()
         self.display_paths = []
         # 如果清除 Start，从 droplet_starts 移除对应条目
         if state == self.STATE_START:
@@ -513,10 +1020,12 @@ class ElectrodeGrid(QWidget):
                 if self.grid[row][col] == state:
                     self.grid[row][col] = self.STATE_IDLE
         self.droplet_config_changed.emit()
+        self.undo_state_changed.emit(self.can_undo(), self.can_redo())
         self.update()
 
     def clear_droplet(self, droplet_id):
         """清除指定液滴的起点和终点，保留障碍物和其他液滴。"""
+        self.save_snapshot()
         self.display_paths = []
         if droplet_id in self.droplet_starts:
             r, c = self.droplet_starts.pop(droplet_id)
@@ -525,10 +1034,12 @@ class ElectrodeGrid(QWidget):
             r, c = self.droplet_targets.pop(droplet_id)
             self.grid[r][c] = self.STATE_IDLE
         self.droplet_config_changed.emit()
+        self.undo_state_changed.emit(self.can_undo(), self.can_redo())
         self.update()
 
     def clear_all_droplets(self):
         """清除所有液滴的起点/终点配置，同时清除路径显示。"""
+        self.save_snapshot()
         self.display_paths = []
         # 清除所有起点和终点的格子
         for did, (r, c) in list(self.droplet_starts.items()):
@@ -538,4 +1049,5 @@ class ElectrodeGrid(QWidget):
         self.droplet_starts.clear()
         self.droplet_targets.clear()
         self.droplet_config_changed.emit()
+        self.undo_state_changed.emit(self.can_undo(), self.can_redo())
         self.update()

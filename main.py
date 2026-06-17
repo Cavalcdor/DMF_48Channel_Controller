@@ -73,6 +73,14 @@ class DMFControllerWindow(QMainWindow):
         self.test_timer = QTimer()
         self.test_timer.timeout.connect(self.test_channel_step)
 
+        # ============ 液滴裂分 ============
+        self.split_timer = QTimer()
+        self.split_timer.timeout.connect(self._split_pull_step)
+        self._split_pull_queue = []    # 逐层队列 list[list[int]]
+        self._split_pull_layer = 0     # 当前层索引
+        self._split_on_channels = []   # 第一层 ON 的电极（相邻的）
+        self._split_off_channels = []  # OFF 的电极（中心）
+
         # ============ 芯片测试状态 ============
         self.chip_test_running = False
         self.chip_test_current = -1
@@ -89,6 +97,8 @@ class DMFControllerWindow(QMainWindow):
         self.grid_widget.undo_state_changed.connect(self._on_undo_state_changed)
         self.grid_widget.chip_test_cell_clicked.connect(self.on_chip_test_cell_selected)
         self.grid_widget.chip_test_enter_pressed.connect(lambda: self.on_chip_mark('pass'))
+        self.grid_widget.split_center_selected.connect(self._on_split_center_selected)
+        self.grid_widget.multi_selection_changed.connect(self._on_multi_selection_changed)
 
         # ============ 撤销/重做状态 ============
         self._undo_action = None
@@ -1087,9 +1097,187 @@ class DMFControllerWindow(QMainWindow):
         ch.addStretch()
         chip_tab.setLayout(ch)
 
+        # ──────────────────────── 液滴裂分标签页 ────────────────────────
+        split_tab = QWidget()
+        st = QVBoxLayout(split_tab)
+        st.setContentsMargins(10, 10, 10, 10)
+        st.setSpacing(10)
+
+        # -- 选择中心电极 --
+        ssg = QGroupBox("1. 选择裂分中心")
+        ssl = QVBoxLayout(ssg)
+        ssl.setContentsMargins(14, 18, 14, 14)
+        ssl.setSpacing(8)
+
+        self.split_status_label = QLabel("点击下方「进入裂分模式」后在网格上选择电极")
+        self.split_status_label.setStyleSheet("font-weight:600;font-size:14px;color:#606060;")
+        self.split_status_label.setWordWrap(True)
+        ssl.addWidget(self.split_status_label)
+
+        self.split_center_label = QLabel("中心电极: 未选择")
+        self.split_center_label.setStyleSheet("font-weight:700;font-size:17px;color:#3060b0;")
+        ssl.addWidget(self.split_center_label)
+
+        split_btn_row = QHBoxLayout()
+        self.split_enter_btn = QPushButton("进入裂分模式")
+        self.split_enter_btn.setObjectName("btn_run")
+        self.split_enter_btn.setFixedHeight(34)
+        self.split_enter_btn.setCheckable(True)
+        self.split_enter_btn.clicked.connect(self._toggle_split_mode)
+        split_btn_row.addWidget(self.split_enter_btn, 1)
+
+        self.split_clear_btn = QPushButton("清除选择")
+        self.split_clear_btn.setFixedHeight(34)
+        self.split_clear_btn.setEnabled(False)
+        self.split_clear_btn.clicked.connect(self._clear_split_selection)
+        split_btn_row.addWidget(self.split_clear_btn, 1)
+        ssl.addLayout(split_btn_row)
+
+        ssg.setLayout(ssl)
+        st.addWidget(ssg)
+
+        # -- 裂分参数 --
+        spg = QGroupBox("2. 设置裂分参数")
+        spl = QVBoxLayout(spg)
+        spl.setContentsMargins(14, 18, 14, 14)
+        spl.setSpacing(8)
+
+        dir_row = QHBoxLayout()
+        dir_row.addWidget(QLabel("裂分方向:"))
+        self.split_dir_combo = QComboBox()
+        self.split_dir_combo.addItems(["水平 ←→", "垂直 ↕", "四向 ✦"])
+        self.split_dir_combo.setCurrentIndex(0)
+        self.split_dir_combo.currentIndexChanged.connect(self._on_split_param_changed)
+        dir_row.addWidget(self.split_dir_combo, 1)
+        spl.addLayout(dir_row)
+
+        cnt_row = QHBoxLayout()
+        cnt_row.addWidget(QLabel("子液滴数:"))
+        self.split_count_combo = QComboBox()
+        self.split_count_combo.addItems(["2 个"])
+        self.split_count_combo.setCurrentIndex(0)
+        self.split_count_combo.currentIndexChanged.connect(self._on_split_param_changed)
+        cnt_row.addWidget(self.split_count_combo, 1)
+        spl.addLayout(cnt_row)
+
+        # 裂分预览提示
+        self.split_preview_label = QLabel("提示: ON(绿) OFF(红) 中心(橙)")
+        self.split_preview_label.setStyleSheet("font-size:13px;color:#888;")
+        spl.addWidget(self.split_preview_label)
+
+        spg.setLayout(spl)
+        st.addWidget(spg)
+
+        # -- 执行 --
+        exg = QGroupBox("3. 执行裂分")
+        exl = QVBoxLayout(exg)
+        exl.setContentsMargins(14, 18, 14, 14)
+        exl.setSpacing(8)
+
+        delay_row = QHBoxLayout()
+        delay_row.addWidget(QLabel("逐级拉开延时:"))
+        self.split_delay_spin = QSpinBox()
+        self.split_delay_spin.setRange(30, 2000)
+        self.split_delay_spin.setValue(150)
+        self.split_delay_spin.setSuffix(" ms")
+        self.split_delay_spin.setFixedWidth(110)
+        delay_row.addWidget(self.split_delay_spin)
+        delay_row.addStretch()
+        exl.addLayout(delay_row)
+
+        self.split_exec_btn = QPushButton("▶ 执行裂分")
+        self.split_exec_btn.setObjectName("btn_primary")
+        self.split_exec_btn.setFixedHeight(38)
+        self.split_exec_btn.setEnabled(False)
+        self.split_exec_btn.clicked.connect(self._execute_split)
+        exl.addWidget(self.split_exec_btn)
+
+        self.split_result_label = QLabel("就绪")
+        self.split_result_label.setStyleSheet("font-weight:600;font-size:14px;color:#606060;")
+        exl.addWidget(self.split_result_label)
+
+        exg.setLayout(exl)
+        st.addWidget(exg)
+        st.addStretch()
+
+        split_tab.setLayout(st)
+
         # 添加到标签页
         self.left_tabs.addTab(control_tab, "控制面板")
         self.left_tabs.addTab(chip_tab, "芯片测试")
+        self.left_tabs.addTab(split_tab, "裂分操作")
+
+        # ──────────────────────── 手动多选标签页 ────────────────────────
+        multi_tab = QWidget()
+        mt = QVBoxLayout(multi_tab)
+        mt.setContentsMargins(10, 10, 10, 10)
+        mt.setSpacing(10)
+
+        # -- 模式切换 --
+        mmg = QGroupBox("多选模式")
+        mml = QVBoxLayout(mmg)
+        mml.setContentsMargins(14, 18, 14, 14)
+        mml.setSpacing(8)
+
+        self.multi_mode_btn = QPushButton("进入多选模式")
+        self.multi_mode_btn.setObjectName("btn_run")
+        self.multi_mode_btn.setFixedHeight(34)
+        self.multi_mode_btn.setCheckable(True)
+        self.multi_mode_btn.clicked.connect(self._toggle_multi_mode)
+        mml.addWidget(self.multi_mode_btn)
+
+        self.multi_count_label = QLabel("已选电极: 0")
+        self.multi_count_label.setStyleSheet("font-weight:700;font-size:16px;")
+        mml.addWidget(self.multi_count_label)
+
+        mmg.setLayout(mml)
+        mt.addWidget(mmg)
+
+        # -- 操作按钮 --
+        mog = QGroupBox("批量操作")
+        mol = QVBoxLayout(mog)
+        mol.setContentsMargins(14, 18, 14, 14)
+        mol.setSpacing(8)
+
+        self.multi_select_all_btn = QPushButton("全选")
+        self.multi_select_all_btn.setFixedHeight(34)
+        self.multi_select_all_btn.clicked.connect(self._multi_select_all)
+        mol.addWidget(self.multi_select_all_btn)
+
+        self.multi_clear_btn = QPushButton("清除选择")
+        self.multi_clear_btn.setFixedHeight(34)
+        self.multi_clear_btn.clicked.connect(self._multi_clear)
+        mol.addWidget(self.multi_clear_btn)
+
+        mol.addSpacing(6)
+
+        self.multi_batch_on_btn = QPushButton("⚡ 同时打开 (Batch ON)")
+        self.multi_batch_on_btn.setObjectName("btn_primary")
+        self.multi_batch_on_btn.setFixedHeight(38)
+        self.multi_batch_on_btn.clicked.connect(self._multi_batch_on)
+        mol.addWidget(self.multi_batch_on_btn)
+
+        self.multi_all_off_btn = QPushButton("■ 全部关闭 (ALL OFF)")
+        self.multi_all_off_btn.setObjectName("btn_stop")
+        self.multi_all_off_btn.setFixedHeight(34)
+        self.multi_all_off_btn.clicked.connect(self._multi_all_off)
+        mol.addWidget(self.multi_all_off_btn)
+
+        self.multi_log_label = QLabel("就绪")
+        self.multi_log_label.setStyleSheet("font-size:13px;color:#888;")
+        mol.addWidget(self.multi_log_label)
+
+        mog.setLayout(mol)
+        mt.addWidget(mog)
+        mt.addStretch()
+
+        multi_tab.setLayout(mt)
+
+        # 添加到标签页
+        self.left_tabs.addTab(control_tab, "控制面板")
+        self.left_tabs.addTab(chip_tab, "芯片测试")
+        self.left_tabs.addTab(split_tab, "裂分操作")
+        self.left_tabs.addTab(multi_tab, "手动操作")
         left.addWidget(self.left_tabs, 1)
 
         # ────────── 中间: 电极网格 ──────────
@@ -2699,6 +2887,260 @@ class DMFControllerWindow(QMainWindow):
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write('\n'.join(lines))
         self.log_panel.log_success(f"录制已导出: {filepath}")
+
+    # ── 液滴裂分 ──────────────────────────────────
+
+    @pyqtSlot()
+    def _toggle_split_mode(self):
+        """切换裂分模式。"""
+        if self.split_enter_btn.isChecked():
+            self.grid_widget.mode = ElectrodeGrid.MODE_SPLIT
+            self.split_status_label.setText("点击网格上的电极选择裂分中心")
+            self.split_status_label.setStyleSheet("font-weight:700;font-size:14px;color:#d08020;")
+            self.split_center_label.setText("中心电极: 等待选择...")
+            self.split_enter_btn.setText("退出裂分模式")
+            if self.grid_widget.split_center:
+                self.split_clear_btn.setEnabled(True)
+            self.log_panel.log_info("已进入液滴裂分模式 — 点击网格电极选择裂分中心")
+        else:
+            self.grid_widget.mode = ElectrodeGrid.MODE_SD
+            self.grid_widget.clear_split_center()
+            self.split_status_label.setText("点击「进入裂分模式」后在网格上选择电极")
+            self.split_status_label.setStyleSheet("font-weight:600;font-size:14px;color:#606060;")
+            self.split_center_label.setText("中心电极: 未选择")
+            self.split_enter_btn.setText("进入裂分模式")
+            self.split_clear_btn.setEnabled(False)
+            self.split_exec_btn.setEnabled(False)
+            self.log_panel.log_info("已退出液滴裂分模式")
+
+    @pyqtSlot()
+    def _clear_split_selection(self):
+        """清除裂分中心选择。"""
+        self.grid_widget.clear_split_center()
+        self.split_center_label.setText("中心电极: 未选择")
+        self.split_clear_btn.setEnabled(False)
+        self.split_exec_btn.setEnabled(False)
+        self.split_result_label.setText("就绪")
+
+    @pyqtSlot(int, int)
+    def _on_split_center_selected(self, row, col):
+        """处理网格上裂分中心的选择。"""
+        if not self.split_enter_btn.isChecked():
+            return
+        idx = ElectrodeGrid.coord_to_index(row, col)
+        self.split_center_label.setText(f"中心电极: 通道 {idx}  (行{row} 列{col})")
+        self.split_center_label.setStyleSheet("font-weight:700;font-size:17px;color:#d08020;")
+        self.split_clear_btn.setEnabled(True)
+        self.split_exec_btn.setEnabled(True)
+        self.split_result_label.setText("已选择 — 点击「执行裂分」开始")
+        self.split_result_label.setStyleSheet("font-weight:600;font-size:14px;color:#3060b0;")
+        self.log_panel.log_info(f"裂分中心已选择: 通道 {idx} (行{row} 列{col})")
+        self._update_split_preview()
+
+    def _on_split_param_changed(self):
+        """裂分参数变更时更新预览。"""
+        self._update_split_preview()
+
+    def _update_split_preview(self):
+        """更新网格上的裂分预览。"""
+        dir_text = self.split_dir_combo.currentText()
+        direction = {"水平 ←→": "horizontal", "垂直 ↕": "vertical", "四向 ✦": "cross"}.get(dir_text, "horizontal")
+
+        self.grid_widget.set_split_preview(direction, 2)
+
+        # 更新提示信息
+        on_list, off_list = self.grid_widget.get_split_electrodes()
+        if on_list or off_list:
+            self.split_preview_label.setText(
+                f"ON: {len(on_list)} 个  |  OFF: {len(off_list)} 个  |  网格已预览"
+            )
+
+    @pyqtSlot()
+    def _execute_split(self):
+        """执行液滴裂分 — 分两阶段：
+        1) 先 send_joint 打开相邻电极 + 关闭中心
+        2) 然后用 split_timer 由近到远逐级拉开外围电极
+        """
+        if not self.serial_connected:
+            QMessageBox.warning(self, "警告", "串口未连接")
+            return
+        if self.split_timer.isActive():
+            return
+
+        center = self.grid_widget.split_center
+        if center is None:
+            QMessageBox.warning(self, "提示", "请先选择裂分中心电极")
+            return
+
+        dir_text = self.split_dir_combo.currentText()
+        direction = {"水平 ←→": "horizontal", "垂直 ↕": "vertical", "四向 ✦": "cross"}.get(dir_text, "horizontal")
+
+        # 设置预览参数并计算电极
+        self.grid_widget.set_split_preview(direction, 2)
+        on_channels, off_channels = self.grid_widget.get_split_electrodes()
+
+        if not on_channels:
+            QMessageBox.warning(self, "提示", "裂分参数无效，请检查中心电极位置是否在边界")
+            return
+
+        r, c = center
+        center_idx = ElectrodeGrid.coord_to_index(r, c)
+
+        # ---- 阶段 1: 同时打开相邻电极 + 关闭中心 ----
+        self.serial_thread.send_joint(on_channels=on_channels, off_channels=off_channels)
+
+        on_str = ", ".join(str(ch) for ch in on_channels)
+        off_str = ", ".join(str(ch) for ch in off_channels)
+        self.log_panel.log_info(f"裂分 阶段1 — 中心关闭 + 相邻 ON: [{on_str}] OFF=[{off_str}]")
+        self.split_result_label.setText("阶段1: 打开相邻电极...")
+        self.split_result_label.setStyleSheet("font-weight:600;font-size:14px;color:#3060b0;")
+        self.split_exec_btn.setEnabled(False)
+
+        # ---- 阶段 2: 由近到远逐级拉开 ----
+        sequence = self.grid_widget.get_split_sequence()
+        if not sequence:
+            # 没有外层可拉 — 直接完成
+            self._finish_split(on_channels, off_channels, center, center_idx)
+            return
+
+        delay = self.split_delay_spin.value()
+        self._split_pull_queue = sequence
+        self._split_pull_layer = 0
+        self._split_on_channels = on_channels
+        self._split_off_channels = off_channels
+        self._split_center = center
+        self._split_center_idx = center_idx
+
+        self.log_panel.log_info(f"裂分 阶段2 — 逐级拉开 {len(sequence)} 层, 延时={delay}ms")
+        self.split_result_label.setText(f"阶段2: 逐级拉开中 (0/{len(sequence)} 层)...")
+        self.split_timer.start(delay)
+
+    def _split_pull_step(self):
+        """QTimer 回调：发送下一层的拉开指令。"""
+        if self._split_pull_layer >= len(self._split_pull_queue):
+            # 所有层完成
+            self.split_timer.stop()
+            self._finish_split(
+                self._split_on_channels,
+                self._split_off_channels,
+                self._split_center,
+                self._split_center_idx
+            )
+            self.split_result_label.setText(f"阶段2: 逐级拉开完成 ✓")
+            return
+
+        layer_channels = self._split_pull_queue[self._split_pull_layer]
+        self._split_pull_layer += 1
+
+        # 只 ON 这一层的电极（不需要 OFF）
+        self.serial_thread.send_joint(on_channels=layer_channels, off_channels=[])
+        self.log_panel.log_info(f"裂分 拉开层 {self._split_pull_layer}/{len(self._split_pull_queue)}: ON {layer_channels}")
+        self.split_result_label.setText(
+            f"阶段2: 逐级拉开中 ({self._split_pull_layer}/{len(self._split_pull_queue)} 层)..."
+        )
+
+    def _finish_split(self, on_channels, off_channels, center, center_idx):
+        """裂分完成：更新网格状态 + 退出裂分模式。"""
+        r, c = center
+
+        # 将裂分目标位置设为新液滴起点
+        new_droplet_id = max([0] + list(self.grid_widget.droplet_starts.keys()) +
+                             list(self.grid_widget.droplet_targets.keys())) + 1
+
+        for ch in on_channels:
+            if ch == center_idx:
+                continue
+            nr = ch // self.grid_widget.cols
+            nc = ch % self.grid_widget.cols
+            self.grid_widget.droplet_starts[new_droplet_id] = (nr, nc)
+            self.grid_widget.grid[nr][nc] = ElectrodeGrid.STATE_START
+            new_droplet_id += 1
+
+        if center_idx not in on_channels:
+            self.grid_widget.grid[r][c] = ElectrodeGrid.STATE_IDLE
+
+        self.grid_widget.droplet_config_changed.emit()
+        self.grid_widget.update()
+
+        result_msg = f"✅ 裂分完成: {len(on_channels)} 个 ON, {len(off_channels)} 个 OFF"
+        self.split_result_label.setText(result_msg)
+        self.split_result_label.setStyleSheet("font-weight:700;font-size:14px;color:#059669;")
+        self.log_panel.log_success(f"液滴裂分执行成功")
+
+        self.split_exec_btn.setEnabled(True)
+        self.split_enter_btn.setChecked(False)
+        self._toggle_split_mode()
+
+    # ── 手动多选 ──────────────────────────────────
+
+    @pyqtSlot()
+    def _on_multi_selection_changed(self):
+        """多选选择变化时更新计数。"""
+        n = len(self.grid_widget.multi_selected)
+        self.multi_count_label.setText(f"已选电极: {n}")
+
+    @pyqtSlot()
+    def _toggle_multi_mode(self):
+        """切换多选模式。"""
+        if self.multi_mode_btn.isChecked():
+            self.grid_widget.mode = ElectrodeGrid.MODE_MULTI
+            self.multi_mode_btn.setText("退出多选模式")
+            self.multi_log_label.setText("点击网格上的电极进行多选")
+            self.log_panel.log_info("已进入手动多选模式 — 点击电极选择/取消")
+        else:
+            self.grid_widget.mode = ElectrodeGrid.MODE_SD
+            self.grid_widget.multi_selected.clear()
+            self.grid_widget.update()
+            self.multi_mode_btn.setText("进入多选模式")
+            self.multi_count_label.setText("已选电极: 0")
+            self.multi_log_label.setText("就绪")
+            self.log_panel.log_info("已退出手动多选模式")
+
+    @pyqtSlot()
+    def _multi_select_all(self):
+        """全选所有电极。"""
+        if not self.multi_mode_btn.isChecked():
+            QMessageBox.warning(self, "提示", "请先进入多选模式")
+            return
+        self.grid_widget.set_multi_select_all()
+        n = len(self.grid_widget.multi_selected)
+        self.multi_count_label.setText(f"已选电极: {n}")
+        self.multi_log_label.setText(f"全选: {n} 个电极")
+
+    @pyqtSlot()
+    def _multi_clear(self):
+        """清除多选。"""
+        self.grid_widget.clear_multi_select()
+        self.multi_count_label.setText("已选电极: 0")
+        self.multi_log_label.setText("已清除选择")
+
+    @pyqtSlot()
+    def _multi_batch_on(self):
+        """同时打开选中的电极 (Batch ON)。"""
+        if not self.serial_connected:
+            QMessageBox.warning(self, "警告", "串口未连接")
+            return
+        indices = self.grid_widget.get_multi_selected_indices()
+        if not indices:
+            QMessageBox.warning(self, "提示", "请先选择至少一个电极")
+            return
+        on_str = ", ".join(str(i) for i in indices)
+        self.log_panel.log_info(f"批量 ON: [{on_str}]")
+        # 依次发送 ON 指令
+        for idx in indices:
+            self.serial_thread.send_cmd(f"ON,{idx}")
+        self.multi_log_label.setText(f"已打开 {len(indices)} 个电极")
+        self.log_panel.log_success(f"批量 ON: {len(indices)} 个电极已打开")
+
+    @pyqtSlot()
+    def _multi_all_off(self):
+        """全部关闭。"""
+        if not self.serial_connected:
+            QMessageBox.warning(self, "警告", "串口未连接")
+            return
+        self.serial_thread.send_cmd("ALLOFF")
+        self.multi_log_label.setText("已发送 ALL OFF")
+        self.log_panel.log_info("手动操作: 全部关闭 (ALLOFF)")
 
     # ── 通知音效 ──────────────────────────────────
 

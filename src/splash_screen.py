@@ -4,7 +4,7 @@ DMF 48通道控制器 — 欢迎启动界面
 """
 
 # ========== 应用全局信息 ==========
-VERSION = "3.0.1"
+VERSION = "4.0.0"
 AUTHOR = "Charles WENG"
 YEAR = 2026
 

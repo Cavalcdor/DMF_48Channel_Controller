@@ -207,6 +207,51 @@ class SerialThread(QThread):
     def send_alloff(self):
         return self.send_cmd("ALLOFF")
 
+    def send_joint(self, on_channels=None, off_channels=None):
+        """批处理：一次性发送多个 ON/OFF 指令，尽可能接近"同时"执行。
+
+        Args:
+            on_channels: list[int] — 需要打开的通道号列表
+            off_channels: list[int] — 需要关闭的通道号列表
+
+        在虚拟模式下，所有通道状态会原子化更新。
+        在真实串口模式下，按OFF→ON顺序连续写出，最大限度减少时间差。
+        如需硬件级同步，请在 Arduino 固件中实现 JOINT 指令。
+        """
+        on_list = on_channels or []
+        off_list = off_channels or []
+
+        if not on_list and not off_list:
+            return True
+
+        if self._virtual:
+            # 虚拟模式：原子化更新
+            for ch in off_list:
+                self._virtual_channels.pop(ch, None)
+            for ch in on_list:
+                self._virtual_channels[ch] = True
+            on_str = ','.join(str(c) for c in on_list) if on_list else "无"
+            off_str = ','.join(str(c) for c in off_list) if off_list else "无"
+            self._virtual_delayed_reply(f"JOINT: ON [{on_str}], OFF [{off_str}] OK")
+            return True
+
+        if not self._ser or not getattr(self._ser, 'is_open', False):
+            self.error.emit('Serial port not open')
+            return False
+
+        try:
+            # 先关后开：先释放旧电极，再激活新电极
+            for ch in off_list:
+                cmd = f"OFF,{ch}\n".encode('utf-8')
+                self._ser.write(cmd)
+            for ch in on_list:
+                cmd = f"ON,{ch}\n".encode('utf-8')
+                self._ser.write(cmd)
+            return True
+        except Exception as e:
+            self.error.emit(str(e))
+            return False
+
     def run(self):
         """线程主循环：实时读取串口返回数据并通过信号发出。
 

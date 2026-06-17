@@ -66,8 +66,12 @@ class ElectrodeGrid(QWidget):
     # 交互模式常量
     MODE_SD = "sd"          # 起点/终点设置模式
     MODE_OBSTACLE = "obstacle"  # 障碍物设置模式
+    MODE_SPLIT = "split"    # 液滴裂分模式
+    MODE_MULTI = "multi"    # 手动多选模式
 
     cell_changed = pyqtSignal(int, int, int)  # row, col, state
+    split_center_selected = pyqtSignal(int, int)  # row, col（裂分模式选中中心电极）
+    multi_selection_changed = pyqtSignal()       # 多选模式选择变化
 
     # 信号：液滴配置变化（用于主窗口更新状态显示）
     droplet_config_changed = pyqtSignal()
@@ -124,6 +128,14 @@ class ElectrodeGrid(QWidget):
 
         # ============ 交互模式 ============
         self.mode = self.MODE_SD             # 默认：起点/终点设置模式
+
+        # ============ 液滴裂分 ============
+        self.split_center = None            # (row, col) 裂分中心电极
+        self.split_direction = "horizontal"  # "horizontal" / "vertical" / "cross"
+        self.split_count = 2                # 2 或 3
+
+        # ============ 手动多选 ============
+        self.multi_selected = set()         # {(row, col), ...}
 
         self.setFocusPolicy(Qt.StrongFocus)  # 接收键盘事件
         self.setStyleSheet("background-color: transparent;")
@@ -223,6 +235,181 @@ class ElectrodeGrid(QWidget):
         ids = set(self.droplet_starts.keys()) | set(self.droplet_targets.keys())
         return sorted(ids)
 
+    # ── 液滴裂分 ────────────────────────────────────
+
+    def set_split_center(self, row, col):
+        """设置裂分中心电极，触发重绘。"""
+        if 0 <= row < self.rows and 0 <= col < self.cols:
+            self.split_center = (row, col)
+            self.update()
+
+    def clear_split_center(self):
+        """清除裂分中心电极。"""
+        self.split_center = None
+        self.update()
+
+    def set_split_preview(self, direction, count):
+        """更新裂分预览参数并重绘。
+
+        Args:
+            direction: "horizontal" / "vertical" / "cross"
+            count: 2 或 3
+        """
+        self.split_direction = direction
+        self.split_count = count
+        self.update()
+
+    def get_split_electrodes(self):
+        """根据当前裂分设置，计算需要 ON/OFF 的电极。
+
+        Returns:
+            (on_list, off_list) 其中每个元素是硬件索引 int。
+            若 center 未设置或参数无效，返回 ([], [])。
+        """
+        if self.split_center is None:
+            return [], []
+
+        r, c = self.split_center
+        cols = self.cols
+        on_set = set()
+        off_set = set()
+
+        # 中心电极始终关闭
+        center_idx = r * cols + c
+
+        if self.split_direction == "horizontal":
+            # 左右两侧 ON, 中心 OFF
+            if c - 1 >= 0:
+                on_set.add(r * cols + (c - 1))
+            if c + 1 < cols:
+                on_set.add(r * cols + (c + 1))
+            off_set.add(center_idx)
+
+        elif self.split_direction == "vertical":
+            # 上下两侧 ON, 中心 OFF
+            if r - 1 >= 0:
+                on_set.add((r - 1) * cols + c)
+            if r + 1 < self.rows:
+                on_set.add((r + 1) * cols + c)
+            off_set.add(center_idx)
+
+        elif self.split_direction == "cross":
+            # 十字四向：上下左右 ON, 中心 OFF
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < self.rows and 0 <= nc < cols:
+                    on_set.add(nr * cols + nc)
+            off_set.add(center_idx)
+
+        return sorted(on_set), sorted(off_set)
+
+    def get_split_preview_cells(self):
+        """返回用于预览高亮的单元格坐标列表。
+
+        Returns:
+            (center_cell, on_cells, off_cells)
+            其中每个元素为 (row, col) 或 [(row, col), ...]
+        """
+        if self.split_center is None:
+            return None, [], []
+
+        r, c = self.split_center
+        on_cells = []
+        off_cells = []
+
+        if self.split_direction == "horizontal":
+            if c - 1 >= 0:
+                on_cells.append((r, c - 1))
+            if c + 1 < self.cols:
+                on_cells.append((r, c + 1))
+            off_cells.append((r, c))
+
+        elif self.split_direction == "vertical":
+            if r - 1 >= 0:
+                on_cells.append((r - 1, c))
+            if r + 1 < self.rows:
+                on_cells.append((r + 1, c))
+            off_cells.append((r, c))
+
+        elif self.split_direction == "cross":
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < self.rows and 0 <= nc < self.cols:
+                    on_cells.append((nr, nc))
+            off_cells.append((r, c))
+
+        return (r, c), on_cells, off_cells
+
+    # ── 裂分逐级拉开序列 ────────────────────────────
+
+    def get_split_sequence(self):
+        """返回裂分后由近到远的逐级拉开序列。
+
+        初始裂分只 ON 距离 1 的相邻电极，本方法返回距离 ≥2 的各层，
+        每层从近到远排列。配合可调延时 QTimer 逐步发送实现"拉断"效果。
+
+        Returns:
+            list[list[int]]: 每个元素是一层中要 ON 的电极索引列表，
+            从近到远排列。若 center 未设置则返回 []。
+        """
+        if self.split_center is None:
+            return []
+
+        r, c = self.split_center
+        cols = self.cols
+
+        # 确定扩展方向
+        if self.split_direction == "horizontal":
+            directions = [(0, -1), (0, 1)]
+        elif self.split_direction == "vertical":
+            directions = [(-1, 0), (1, 0)]
+        elif self.split_direction == "cross":
+            directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+        else:
+            directions = [(0, -1), (0, 1)]
+
+        # 逐层向外 (从距离 2 开始)
+        sequence = []
+        for dist in range(2, max(self.rows, self.cols)):
+            layer = []
+            for dr, dc in directions:
+                nr = r + dr * dist
+                nc = c + dc * dist
+                if 0 <= nr < self.rows and 0 <= nc < cols:
+                    layer.append(nr * cols + nc)
+            if not layer:
+                break
+            sequence.append(layer)
+
+        return sequence
+
+    # ── 手动多选 ────────────────────────────────────
+
+    def toggle_multi_select(self, row, col):
+        """切换某个电极的多选状态。"""
+        if (row, col) in self.multi_selected:
+            self.multi_selected.discard((row, col))
+        else:
+            self.multi_selected.add((row, col))
+        self.multi_selection_changed.emit()
+        self.update()
+
+    def clear_multi_select(self):
+        """清除所有多选。"""
+        self.multi_selected.clear()
+        self.multi_selection_changed.emit()
+        self.update()
+
+    def set_multi_select_all(self):
+        """全选所有电极。"""
+        self.multi_selected = {(r, c) for r in range(self.rows) for c in range(self.cols)}
+        self.multi_selection_changed.emit()
+        self.update()
+
+    def get_multi_selected_indices(self):
+        """返回多选电极的硬件索引列表。"""
+        return sorted(r * self.cols + c for (r, c) in self.multi_selected)
+
     @staticmethod
     def coord_to_index(row, col):
         """将坐标 (row, col) 转换为硬件索引（0-based）。
@@ -272,6 +459,14 @@ class ElectrodeGrid(QWidget):
                     self.display_paths = []
                     self.cell_changed.emit(row, col, self.grid[row][col])
                     self.update()
+                elif self.mode == self.MODE_SPLIT:
+                    # 裂分模式：点击电极设为裂分中心
+                    self.split_center = (row, col)
+                    self.split_center_selected.emit(row, col)
+                    self.update()
+                elif self.mode == self.MODE_MULTI:
+                    # 多选模式：点击切换选中状态
+                    self.toggle_multi_select(row, col)
                 elif self.mode == self.MODE_SD:
                     # 智能模式：点空闲格自动设为起点/终点，点已设格取消
                     # 支持液滴融合：多个液滴可共享同一终点
@@ -717,6 +912,94 @@ class ElectrodeGrid(QWidget):
                     tp.addRoundedRect(QRectF(rect_f.adjusted(-1, -1, 1, 1)),
                                       self.border_radius, self.border_radius)
                     painter.drawPath(tp)
+
+        # ============ 第 4.5 层：手动多选模式高亮 ============
+        if self.mode == self.MODE_MULTI and self.multi_selected:
+            for sel_row, sel_col in self.multi_selected:
+                rect = self._get_cell_rect(sel_row, sel_col)
+                rect_f = QRectF(rect)
+                # 半透明蓝色填充 + 粗边框
+                painter.setBrush(QColor(40, 120, 255, 60))
+                pen = QPen(QColor(40, 100, 220), 3.5)
+                pen.setCapStyle(Qt.RoundCap)
+                pen.setJoinStyle(Qt.RoundJoin)
+                painter.setPen(pen)
+                mp_path = QPainterPath()
+                mp_path.addRoundedRect(QRectF(rect_f.adjusted(-1, -1, 1, 1)),
+                                       self.border_radius, self.border_radius)
+                painter.drawPath(mp_path)
+                painter.fillPath(mp_path, QColor(40, 120, 255, 60))
+                # 白色勾标记
+                painter.setPen(Qt.white)
+                fs = max(14, self.cell_size // 4)
+                painter.setFont(QFont("Arial", fs, QFont.Bold))
+                painter.drawText(rect, Qt.AlignCenter, "✓")
+
+        # ============ 第五层：裂分预览叠加 ============
+        if self.split_center is not None:
+            center, on_cells, off_cells = self.get_split_preview_cells()
+
+            # 中心电极 — 橙黄色粗边框 + 中间标记
+            if center:
+                cr, cc = center
+                rect = self._get_cell_rect(cr, cc)
+                rect_f = QRectF(rect)
+                sp_pen = QPen(QColor(255, 140, 0), 4.0)
+                sp_pen.setCapStyle(Qt.RoundCap)
+                sp_pen.setJoinStyle(Qt.RoundJoin)
+                painter.setPen(sp_pen)
+                painter.setBrush(QColor(255, 200, 50, 40))
+                sp_path = QPainterPath()
+                sp_path.addRoundedRect(QRectF(rect_f.adjusted(-1, -1, 1, 1)),
+                                       self.border_radius, self.border_radius)
+                painter.drawPath(sp_path)
+                painter.fillPath(sp_path, QColor(255, 200, 50, 40))
+                painter.setPen(QColor(220, 120, 0))
+                fs = max(14, self.cell_size // 4)
+                painter.setFont(QFont("Arial", fs, QFont.Bold))
+                painter.drawText(rect, Qt.AlignCenter, "⊙")
+
+            # ON 电极 — 绿色边框 + ✓
+            for r, c in on_cells:
+                if (r, c) == center:
+                    continue
+                rect = self._get_cell_rect(r, c)
+                rect_f = QRectF(rect)
+                painter.setBrush(QColor(0, 200, 80, 40))
+                sp_pen = QPen(QColor(0, 180, 60), 3.0)
+                sp_pen.setCapStyle(Qt.RoundCap)
+                sp_pen.setJoinStyle(Qt.RoundJoin)
+                painter.setPen(sp_pen)
+                sp_path = QPainterPath()
+                sp_path.addRoundedRect(QRectF(rect_f.adjusted(-1, -1, 1, 1)),
+                                       self.border_radius, self.border_radius)
+                painter.drawPath(sp_path)
+                painter.fillPath(sp_path, QColor(0, 200, 80, 40))
+                painter.setPen(QColor(0, 150, 50))
+                fs = max(14, self.cell_size // 4)
+                painter.setFont(QFont("Arial", fs, QFont.Bold))
+                painter.drawText(rect, Qt.AlignCenter, "+")
+
+            # OFF 电极 — 红色斜线 + ✗
+            for r, c in off_cells:
+                if (r, c) == center:
+                    continue
+                rect = self._get_cell_rect(r, c)
+                rect_f = QRectF(rect)
+                painter.setBrush(QColor(200, 40, 40, 30))
+                sp_pen = QPen(QColor(200, 40, 40), 3.0)
+                sp_pen.setCapStyle(Qt.RoundCap)
+                sp_pen.setJoinStyle(Qt.RoundJoin)
+                painter.setPen(sp_pen)
+                sp_path = QPainterPath()
+                sp_path.addRoundedRect(QRectF(rect_f.adjusted(-1, -1, 1, 1)),
+                                       self.border_radius, self.border_radius)
+                painter.drawPath(sp_path)
+                painter.fillPath(sp_path, QColor(200, 40, 40, 30))
+                painter.setPen(QColor(180, 20, 20))
+                fs = max(14, self.cell_size // 4)
+                painter.setFont(QFont("Arial", fs, QFont.Bold))
+                painter.drawText(rect, Qt.AlignCenter, "—")
 
 
     # ── 撤销/重做 ──────────────────────────────────
